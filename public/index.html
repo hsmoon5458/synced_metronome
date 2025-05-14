@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Synced Metronome</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    :root {
+      --emerald-bg: #10b981;
+      --emerald-text: #ffffff;
+      --default-bg: #ffffff;
+      --default-text: #111;
+      --button-bg: #007AFF;
+      --button-hover: #0051c3;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+      text-align: center;
+      padding: 2rem;
+      margin: 0;
+      background-color: var(--default-bg);
+      color: var(--default-text);
+      transition: background-color 0.3s ease, color 0.3s ease;
+    }
+
+    body.playing {
+      background-color: var(--emerald-bg);
+      color: var(--emerald-text);
+    }
+
+    h1 {
+      margin-bottom: 1rem;
+      font-size: 2rem;
+      font-weight: 600;
+    }
+
+    #controls, #hostControls {
+      background: rgba(255, 255, 255, 0.8);
+      border-radius: 1rem;
+      padding: 1.5rem;
+      margin: 1rem auto;
+      max-width: 95%;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.1);
+      backdrop-filter: blur(10px);
+      transition: background 0.3s ease;
+    }
+
+    body.playing #controls,
+    body.playing #hostControls {
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    select, input[type="number"] {
+      width: 100%;
+      padding: 0.8rem;
+      font-size: 1rem;
+      margin: 0.5rem 0;
+      border-radius: 0.75rem;
+      border: 1px solid #ccc;
+      background: #f0f0f0;
+      transition: background 0.3s ease;
+    }
+
+    button {
+      padding: 0.8rem 1.5rem;
+      font-size: 1rem;
+      margin: 0.5rem;
+      border: none;
+      border-radius: 1rem;
+      background: var(--button-bg);
+      color: white;
+      cursor: pointer;
+      box-shadow: 0 4px 10px rgba(0, 122, 255, 0.2);
+      transition: background 0.3s ease, transform 0.2s ease;
+    }
+
+    button:hover {
+      background: var(--button-hover);
+      transform: translateY(-1px);
+    }
+
+    @media (max-width: 600px) {
+      h1 {
+        font-size: 1.5rem;
+      }
+      button {
+        width: 100%;
+        margin: 0.5rem 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>Synced Metronome</h1>
+  <div id="controls">
+    <p>Your Role: <strong id="roleLabel">Not Set</strong></p>
+    <button onclick="setRole('host')">Host</button>
+    <button onclick="setRole('client')">Client</button>
+    <p>BPM: <span id="bpmDisplay">--</span></p>
+    <p>Time Signature: <span id="tsDisplay">--</span></p>
+    <p>Subdivision: <span id="subdivDisplay">--</span></p>
+    <p id="statusDisplay"></p>
+  </div>
+
+  <div id="hostControls" style="display:none;">
+    <input type="number" id="bpmInput" placeholder="Set BPM">
+    <select id="timeSigInput">
+      <option value="4/4">4/4</option>
+      <option value="3/4">3/4</option>
+      <option value="6/8">6/8</option>
+    </select>
+    <select id="subdivisionInput">
+      <option value="1">Quarter Note (1/4)</option>
+      <option value="2">Eighth Note (1/8)</option>
+      <option value="4">Sixteenth Note (1/16)</option>
+    </select>
+    <button onclick="updateSettings()">Set Settings</button>
+    <button onclick="startMetronome()">Start</button>
+    <button onclick="stopMetronome()">Stop</button>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    let bpm = 120, isRunning = false, startTime = null, nextTick = 0;
+    let role = null, timeOffset = 0, tickTimer = null;
+    let subdivision = 1, timeSignature = '4/4';
+    let beatCount = 0;
+
+    async function syncTime() {
+      const samples = [];
+      for (let i = 0; i < 5; i++) {
+        const t0 = performance.now();
+        const res = await fetch('/time');
+        const t1 = performance.now();
+        const json = await res.json();
+        const rtt = t1 - t0;
+        const serverTime = json.serverTime + rtt / 2;
+        const offset = serverTime - Date.now();
+        samples.push(offset);
+        await new Promise(r => setTimeout(r, 50));
+      }
+      samples.sort((a, b) => a - b);
+      timeOffset = samples[Math.floor(samples.length / 2)];
+    }
+
+    function globalNow() {
+      return performance.now() + timeOffset;
+    }
+
+    function scheduleClick(time, isDownbeat = false) {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      gain.gain.setValueAtTime(1, time);
+      gain.gain.exponentialRampToValueAtTime(0.001, time + 0.05);
+      osc.frequency.setValueAtTime(isDownbeat ? 1500 : 1000, time);
+      osc.start(time);
+      osc.stop(time + 0.05);
+    }
+
+    function tickLoop() {
+      if (!isRunning) return;
+      const interval = (60 / bpm) / subdivision;
+      const now = audioCtx.currentTime;
+      const beatsPerBar = parseInt(timeSignature.split('/')[0]);
+      const ticksPerBar = beatsPerBar * subdivision;
+
+      while (nextTick < now + 0.2) {
+        const isDownbeat = (beatCount % ticksPerBar === 0);
+        scheduleClick(nextTick, isDownbeat);
+        nextTick += interval;
+        beatCount++;
+      }
+      tickTimer = requestAnimationFrame(tickLoop);
+    }
+
+    function syncClock(data) {
+      bpm = data.bpm;
+      isRunning = data.isRunning;
+      startTime = data.startTime;
+      subdivision = data.subdivision || 1;
+      timeSignature = data.timeSignature || '4/4';
+      beatCount = 0;
+      document.getElementById("bpmDisplay").textContent = bpm;
+      document.getElementById("tsDisplay").textContent = timeSignature;
+      document.getElementById("subdivDisplay").textContent = subdivision;
+      document.body.classList.toggle('playing', isRunning);
+      if (tickTimer) cancelAnimationFrame(tickTimer);
+      if (isRunning && startTime) {
+        audioCtx.resume();
+        const delayMs = startTime - globalNow();
+        if (delayMs < 0) return;
+        setTimeout(() => {
+          nextTick = audioCtx.currentTime;
+          tickLoop();
+        }, delayMs);
+      }
+    }
+
+    socket.on('sync', syncClock);
+
+    socket.on('clientCount', (count) => {
+      const status = (role === 'host')
+        ? `Clients connected: ${count - 1}`
+        : `You + ${count - 1} others`;
+      document.getElementById("statusDisplay").textContent = status;
+    });
+
+    function updateSettings() {
+      const newBpm = parseInt(document.getElementById("bpmInput").value);
+      const ts = document.getElementById("timeSigInput").value;
+      const subdiv = parseInt(document.getElementById("subdivisionInput").value);
+      if (!isNaN(newBpm)) {
+        socket.emit('updateSettings', {
+          bpm: newBpm,
+          timeSignature: ts,
+          subdivision: subdiv
+        });
+      }
+    }
+
+    function startMetronome() {
+      audioCtx.resume();
+      socket.emit('startMetronome');
+    }
+
+    function stopMetronome() {
+      socket.emit('stopMetronome');
+    }
+
+    function setRole(r) {
+      role = r;
+      document.getElementById("roleLabel").textContent = r;
+      document.getElementById("hostControls").style.display = (r === 'host') ? 'block' : 'none';
+      syncTime().then(() => {
+        socket.emit('identify', r);
+      });
+    }
+  </script>
+</body>
+</html>
