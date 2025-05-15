@@ -1,4 +1,3 @@
-// server.js
 const express = require('express');
 const http = require('http');
 const socketIO = require('socket.io');
@@ -27,11 +26,21 @@ io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
   io.emit('clientCount', clients.size);
 
+  // Always send current sync state to new clients
+  socket.emit('sync', {
+    bpm,
+    startTime,
+    isRunning,
+    timeSignature,
+    subdivision
+  });
+
   socket.on('identify', (role) => {
     if (role === 'host') {
       hostSocketId = socket.id;
       console.log('Host identified:', socket.id);
     }
+    // Re-emit to allow late client to sync again
     socket.emit('sync', {
       bpm,
       startTime,
@@ -59,7 +68,7 @@ io.on('connection', (socket) => {
 
   socket.on('startMetronome', () => {
     if (socket.id === hostSocketId) {
-      startTime = Date.now() + 1000; // 1 second in future
+      startTime = Date.now() + 1000; // start 1 sec in future
       isRunning = true;
       console.log('Metronome started at', new Date(startTime).toISOString());
       io.emit('sync', {

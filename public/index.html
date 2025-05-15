@@ -135,13 +135,6 @@
       border: 1px solid #ccc;
       background: #f9f9f9;
     }
-
-    @media (max-width: 600px) {
-      h1 { font-size: 1.5rem; }
-      button { width: 100%; margin: 0.5rem 0; }
-      .beat-indicators { gap: 1rem; }
-      .dot { width: 3rem; height: 3rem; }
-    }
   </style>
 </head>
 <body>
@@ -202,6 +195,7 @@
     let subdivision = 1, timeSignature = '4/4';
     let beatCount = 0;
     let manualLatencyMs = 0;
+    let tickingStarted = false;
 
     const latencyAdjustInput = document.getElementById('latencyAdjust');
     const bpmAdjust = document.getElementById('bpmAdjust');
@@ -209,6 +203,12 @@
     const tsWrapper = document.getElementById('tsWrapper');
     const subdivWrapper = document.getElementById('subdivWrapper');
     const roleChooser = document.getElementById('roleChooser');
+
+    document.body.addEventListener('click', () => {
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    });
 
     function updateBeatDots() {
       const container = document.getElementById('beatDots');
@@ -302,44 +302,52 @@
 
     function syncClock(data) {
       bpm = data.bpm;
-      document.getElementById('bpmValue').value = bpm;
-      bpmSlider.value = bpm;
-      isRunning = data.isRunning;
-      startTime = data.startTime;
       subdivision = data.subdivision || 1;
       timeSignature = data.timeSignature || '4/4';
-      beatCount = 0;
-      updateBeatDots();
+
+      document.getElementById('bpmValue').value = bpm;
+      bpmSlider.value = bpm;
+      document.getElementById("bpmDisplay").textContent = `BPM: ${bpm}`;
       document.getElementById("tsDisplay").textContent = timeSignature;
       document.getElementById("subdivDisplay").textContent = subdivision;
-      document.getElementById("bpmDisplay").textContent = `BPM: ${bpm}`;
+
+      isRunning = data.isRunning;
       document.body.classList.toggle('playing', isRunning);
 
-      if (tickTimer) {
-        cancelAnimationFrame(tickTimer);
-        tickTimer = null;
-      }
-    
       if (!isRunning) {
-        const dots = document.querySelectorAll('.dot');
-        dots.forEach(dot => dot.classList.remove('active'));
+        if (tickTimer) {
+          cancelAnimationFrame(tickTimer);
+          tickTimer = null;
+        }
+        tickingStarted = false;
+        document.querySelectorAll('.dot').forEach(dot => dot.classList.remove('active'));
         return;
       }
     
-      if (isRunning && startTime) {
+      if (data.startTime && !tickingStarted) {
+        startTime = data.startTime;
+        beatCount = 0;
+        updateBeatDots();
+      
         audioCtx.resume().then(() => {
-          const delayMs = (startTime - globalNow()) + manualLatencyMs;
-          const clampedDelay = Math.max(0, delayMs); // never schedule in past
+          const now = globalNow();
+          const intervalMs = (60000 / bpm) / subdivision;
+        
+          const elapsedMs = now - startTime + manualLatencyMs;
+          const ticksSinceStart = Math.floor(elapsedMs / intervalMs);
+          const nextTickTimeMs = startTime + (ticksSinceStart + 1) * intervalMs;
+        
+          const delayMs = nextTickTimeMs - now;
+          const clampedDelay = Math.max(0, delayMs);
+        
           setTimeout(() => {
-            nextTick = audioCtx.currentTime;
+            nextTick = audioCtx.currentTime + clampedDelay / 1000;
+            beatCount = ticksSinceStart + 1;
             tickLoop();
           }, clampedDelay);
-        }).catch(err => {
-          console.warn("AudioContext failed to resume:", err);
         });
       }
     }
-
 
     socket.on('sync', syncClock);
 
@@ -367,6 +375,10 @@
 
     function stopMetronome() {
       isRunning = false;
+      if (tickTimer) {
+        cancelAnimationFrame(tickTimer);
+        tickTimer = null;
+      }
       socket.emit('stopMetronome');
     }
 
