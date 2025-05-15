@@ -188,6 +188,113 @@
       margin-top: 0.5rem;
       color: #666;
     }
+    
+    /* Visual indicators for time signature and subdivision */
+    .visual-indicators {
+      display: flex;
+      justify-content: center;
+      gap: 2rem;
+      margin: 1.5rem auto;
+    }
+    
+    .visual-indicator {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    
+    .time-sig-visual {
+      position: relative;
+      width: 40px;
+      height: 60px;
+      margin-bottom: 0.5rem;
+    }
+    
+    .time-sig-visual .numerator,
+    .time-sig-visual .denominator {
+      position: absolute;
+      width: 100%;
+      text-align: center;
+      font-size: 1.5rem;
+      font-weight: bold;
+    }
+    
+    .time-sig-visual .numerator {
+      top: 0;
+    }
+    
+    .time-sig-visual .denominator {
+      bottom: 0;
+    }
+    
+    .time-sig-visual .divider {
+      position: absolute;
+      width: 100%;
+      height: 2px;
+      background-color: black;
+      top: 50%;
+      transform: translateY(-50%);
+    }
+    
+    .subdiv-visual {
+      display: flex;
+      justify-content: center;
+      gap: 2px;
+    }
+    
+    .note {
+      width: 12px;
+      height: 28px;
+      position: relative;
+    }
+    
+    .note-head {
+      width: 10px;
+      height: 10px;
+      background: black;
+      border-radius: 50%;
+      position: absolute;
+      bottom: 0;
+    }
+    
+    .note-stem {
+      width: 2px;
+      height: 28px;
+      background: black;
+      position: absolute;
+      bottom: 0;
+      right: 0;
+    }
+    
+    .note-flag {
+      width: 8px;
+      height: 10px;
+      background: black;
+      position: absolute;
+      top: 0;
+      right: 0;
+      border-radius: 0 0 8px 0;
+    }
+    
+    .triplet-bracket {
+      width: 40px;
+      height: 10px;
+      border-top: 2px solid black;
+      border-left: 2px solid black;
+      border-right: 2px solid black;
+      position: relative;
+      margin-top: 5px;
+    }
+    
+    .triplet-bracket::after {
+      content: "3";
+      position: absolute;
+      top: -15px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 12px;
+      font-weight: bold;
+    }
 
     @media (max-width: 480px) {
       .beat-indicators {
@@ -206,6 +313,10 @@
       h1 {
         font-size: 1.8rem;
       }
+      
+      .visual-indicators {
+        gap: 1rem;
+      }
     }
   </style>
 </head>
@@ -216,7 +327,8 @@
   <div class="card">
     <div id="roleChooser">
       <h2>Choose Your Role</h2>
-      <p>Host: Control the metronome. Client: Follow the host.</p>
+      <p>Host: Control the metronome</p>
+      <p>Client: Follow host's metronome</p>
       <div class="button-group">
         <button onclick="setRole('host')">Host</button>
         <button onclick="setRole('client')">Client</button>
@@ -224,68 +336,71 @@
     </div>
 
     <div id="metronomeControls" style="display:none;">
-      <p id="bpmDisplay">120 BPM</p>
+      <p id="bpmDisplay">120</p>
       
-      <div class="bpm-controls" id="bpmControls">
-        <div class="bpm-buttons">
-          <button onclick="changeBpm(-5)">-5</button>
-          <button onclick="changeBpm(-1)">-</button>
-          <input id="bpmValue" value="120">
-          <button onclick="changeBpm(1)">+</button>
-          <button onclick="changeBpm(5)">+5</button>
+      <!-- Visual indicators for time signature and subdivision - only shown for clients -->
+      <div id="clientVisuals" class="visual-indicators">
+        <div class="visual-indicator">
+          <div class="time-sig-visual" id="timeSignatureVisual">
+            <div class="numerator">4</div>
+            <div class="divider"></div>
+            <div class="denominator">4</div>
+          </div>
         </div>
-        <input type="range" id="bpmSlider" min="30" max="300" value="120">
+        <div class="visual-indicator">
+          <div class="subdiv-visual" id="subdivisionVisual">
+            <!-- Will be filled dynamically -->
+          </div>
+        </div>
       </div>
       
-      <p class="info-text">
-        <span id="roleInfo">Your Role: <strong id="roleLabel"></strong></span>
-      </p>
-      <p class="info-text" id="tsWrapper">
-        Time Signature: <strong id="tsDisplay">--</strong>
-      </p>
-      <p class="info-text" id="subdivWrapper">
-        Subdivision: <strong id="subdivDisplay">--</strong>
-      </p>
-      <p id="statusDisplay"></p>
-      <p id="latencyDisplay"></p>
-    </div>
-  </div>
-
-  <div id="hostControls" class="card" style="display:none;">
-    <h2>Host Controls</h2>
-    <div class="settings-grid">
-      <div class="form-group">
-        <label for="timeSigInput">Time Signature:</label>
-        <select id="timeSigInput">
-          <option value="4/4">4/4</option>
-          <option value="3/4">3/4</option>
-          <option value="2/4">2/4</option>
-          <option value="6/8">6/8</option>
-          <option value="7/8">7/8</option>
-          <option value="5/4">5/4</option>
-        </select>
-      </div>
-
-      <div class="form-group">
-        <label for="subdivisionInput">Subdivision:</label>
-        <select id="subdivisionInput">
-          <option value="1">Quarter Note (1/4)</option>
-          <option value="2">Eighth Note (1/8)</option>
-          <option value="3">Eighth Note Triplets</option>
-          <option value="4">Sixteenth Note (1/16)</option>
-        </select>
-      </div>
-
-      <div class="form-group">
-        <label for="latencyAdjust">Latency Compensation (ms): <span id="latencyValue">0</span>ms</label>
-        <input type="range" id="latencyAdjust" min="-200" max="200" value="0">
+      <!-- Group status info together for easy hiding -->
+      <div id="statusInfo">
+        <p id="statusDisplay"></p>
+        <p id="latencyDisplay"></p>
       </div>
     </div>
 
-    <div class="button-group">
-      <button id="updateButton" onclick="updateSettings()">Update Settings</button>
-      <button id="startButton" onclick="startMetronome()">Start</button>
-      <button id="stopButton" class="stop" onclick="stopMetronome()" disabled>Stop</button>
+    <!-- HOST CONTROLS: NO card class, just a div -->
+    <div id="hostControls" style="display:none;">
+      <h2>Host Controls</h2>
+      <div class="settings-grid">
+        <div class="form-group">
+          <label for="bpmSlider">Tempo (BPM):</label>
+          <div class="bpm-controls" id="bpmControls" style="display: flex;">
+            <div class="bpm-buttons">
+              <button onclick="changeBpm(-1)">-</button>
+              <input id="bpmValue" value="120">
+              <button onclick="changeBpm(1)">+</button>
+            </div>
+            <input type="range" id="bpmSlider" min="30" max="300" value="120">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="timeSigInput">Time Signature:</label>
+          <select id="timeSigInput">
+            <option value="4/4">4/4</option>
+            <option value="3/4">3/4</option>
+            <option value="2/4">2/4</option>
+            <option value="6/8">6/8</option>
+            <option value="7/8">7/8</option>
+            <option value="5/4">5/4</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="subdivisionInput">Subdivision:</label>
+          <select id="subdivisionInput">
+            <option value="1">Quarter Note (1/4)</option>
+            <option value="2">Eighth Note (1/8)</option>
+            <option value="3">Eighth Note Triplets</option>
+            <option value="4">Sixteenth Note (1/16)</option>
+          </select>
+        </div>
+      </div>
+      <div class="button-group">
+        <button id="startButton" onclick="startMetronome()">Start</button>
+        <button id="stopButton" class="stop" onclick="stopMetronome()" disabled>Stop</button>
+      </div>
     </div>
   </div>
 
@@ -305,19 +420,17 @@
     let subdivision = 1;
     let timeSignature = '4/4';
     let beatCount = 0;
-    let manualLatencyMs = 0;
     let syncing = false;
     
     // DOM Elements
     const metronomeControls = document.getElementById('metronomeControls');
     const roleChooser = document.getElementById('roleChooser');
-    const latencyAdjustInput = document.getElementById('latencyAdjust');
-    const latencyValueDisplay = document.getElementById('latencyValue');
     const bpmControls = document.getElementById('bpmControls');
     const bpmSlider = document.getElementById('bpmSlider');
     const bpmInput = document.getElementById('bpmValue');
     const startButton = document.getElementById('startButton');
     const stopButton = document.getElementById('stopButton');
+    const clientVisuals = document.getElementById('clientVisuals');
     
     // Enable audio context on user interaction
     document.body.addEventListener('click', () => {
@@ -330,7 +443,7 @@
     bpmSlider.addEventListener('input', () => {
       bpm = parseInt(bpmSlider.value);
       bpmInput.value = bpm;
-      document.getElementById("bpmDisplay").textContent = `${bpm} BPM`;
+      document.getElementById("bpmDisplay").textContent = `${bpm}`;
       if (role === 'host') {
         debounceUpdateSettings();
       }
@@ -344,17 +457,119 @@
       bpm = newBpm;
       bpmInput.value = bpm;
       bpmSlider.value = bpm;
-      document.getElementById("bpmDisplay").textContent = `${bpm} BPM`;
+      document.getElementById("bpmDisplay").textContent = `${bpm}`;
       if (role === 'host') {
         updateSettings();
       }
     });
     
-    // Update latency compensation display
-    latencyAdjustInput.addEventListener('input', (e) => {
-      manualLatencyMs = parseInt(e.target.value);
-      latencyValueDisplay.textContent = manualLatencyMs;
-    });
+    // Update time signature visual display
+    function updateTimeSignatureVisual(ts) {
+      const [numerator, denominator] = ts.split('/').map(Number);
+      const visual = document.getElementById('timeSignatureVisual');
+      
+      const numeratorEl = visual.querySelector('.numerator');
+      const denominatorEl = visual.querySelector('.denominator');
+      
+      numeratorEl.textContent = numerator;
+      denominatorEl.textContent = denominator;
+    }
+    
+    // Update subdivision visual display
+    function updateSubdivisionVisual(subdiv) {
+      const container = document.getElementById('subdivisionVisual');
+      container.innerHTML = '';
+      
+      switch(subdiv) {
+        case 1:
+          // Quarter note
+          const quarterNote = document.createElement('div');
+          quarterNote.className = 'note';
+          
+          const quarterHead = document.createElement('div');
+          quarterHead.className = 'note-head';
+          
+          const quarterStem = document.createElement('div');
+          quarterStem.className = 'note-stem';
+          
+          quarterNote.appendChild(quarterHead);
+          quarterNote.appendChild(quarterStem);
+          container.appendChild(quarterNote);
+          break;
+          
+        case 2:
+          // Eighth note
+          const eighthNote = document.createElement('div');
+          eighthNote.className = 'note';
+          
+          const eighthHead = document.createElement('div');
+          eighthHead.className = 'note-head';
+          
+          const eighthStem = document.createElement('div');
+          eighthStem.className = 'note-stem';
+          
+          const eighthFlag = document.createElement('div');
+          eighthFlag.className = 'note-flag';
+          
+          eighthNote.appendChild(eighthHead);
+          eighthNote.appendChild(eighthStem);
+          eighthNote.appendChild(eighthFlag);
+          container.appendChild(eighthNote);
+          break;
+          
+        case 3:
+          // Eighth note triplet (three eighth notes with bracket)
+          for (let i = 0; i < 3; i++) {
+            const tripletNote = document.createElement('div');
+            tripletNote.className = 'note';
+            tripletNote.style.transform = 'scale(0.8)';
+            
+            const tripletHead = document.createElement('div');
+            tripletHead.className = 'note-head';
+            
+            const tripletStem = document.createElement('div');
+            tripletStem.className = 'note-stem';
+            
+            const tripletFlag = document.createElement('div');
+            tripletFlag.className = 'note-flag';
+            
+            tripletNote.appendChild(tripletHead);
+            tripletNote.appendChild(tripletStem);
+            tripletNote.appendChild(tripletFlag);
+            container.appendChild(tripletNote);
+          }
+          
+          const bracket = document.createElement('div');
+          bracket.className = 'triplet-bracket';
+          container.appendChild(bracket);
+          break;
+          
+        case 4:
+          // Sixteenth note (with double flag)
+          const sixteenthNote = document.createElement('div');
+          sixteenthNote.className = 'note';
+          
+          const sixteenthHead = document.createElement('div');
+          sixteenthHead.className = 'note-head';
+          
+          const sixteenthStem = document.createElement('div');
+          sixteenthStem.className = 'note-stem';
+          
+          const sixteenthFlag1 = document.createElement('div');
+          sixteenthFlag1.className = 'note-flag';
+          
+          const sixteenthFlag2 = document.createElement('div');
+          sixteenthFlag2.className = 'note-flag';
+          sixteenthFlag2.style.top = '8px';
+          
+          sixteenthNote.appendChild(sixteenthHead);
+          sixteenthNote.appendChild(sixteenthStem);
+          sixteenthNote.appendChild(sixteenthFlag1);
+          sixteenthNote.appendChild(sixteenthFlag2);
+          container.appendChild(sixteenthNote);
+          break;
+      }
+    }
     
     // Create visual beat indicators based on time signature
     function updateBeatDots() {
@@ -386,7 +601,7 @@
       bpm = Math.max(30, Math.min(300, bpm + delta));
       bpmSlider.value = bpm;
       bpmInput.value = bpm;
-      document.getElementById("bpmDisplay").textContent = `${bpm} BPM`;
+      document.getElementById("bpmDisplay").textContent = `${bpm}`;
       if (role === 'host') {
         updateSettings();
       }
@@ -518,19 +733,11 @@
       // Update UI
       bpmInput.value = bpm;
       bpmSlider.value = bpm;
-      document.getElementById("bpmDisplay").textContent = `${bpm} BPM`;
-      document.getElementById("tsDisplay").textContent = timeSignature;
+      document.getElementById("bpmDisplay").textContent = `${bpm}`;
       
-      // Show subdivision in a more user-friendly format
-      let subdivText;
-      switch(subdivision) {
-        case 1: subdivText = "Quarter Notes"; break;
-        case 2: subdivText = "Eighth Notes"; break;
-        case 3: subdivText = "Eighth Triplets"; break;
-        case 4: subdivText = "Sixteenth Notes"; break;
-        default: subdivText = subdivision;
-      }
-      document.getElementById("subdivDisplay").textContent = subdivText;
+      // Update visual indicators
+      updateTimeSignatureVisual(timeSignature);
+      updateSubdivisionVisual(subdivision);
       
       // Update running state
       const wasRunning = isRunning;
@@ -575,7 +782,7 @@
           const intervalMs = (60000 / bpm) / subdivision;
           
           // Calculate elapsed time and next tick
-          const elapsedMs = now - startTime + manualLatencyMs;
+          const elapsedMs = now - startTime;
           const ticksSinceStart = Math.floor(elapsedMs / intervalMs);
           const nextTickTimeMs = startTime + (ticksSinceStart + 1) * intervalMs;
           
@@ -606,10 +813,10 @@
     socket.on('sync', syncClock);
     
     socket.on('clientCount', (count) => {
-      const status = (role === 'host')
-        ? `Clients connected: ${count - 1}`
-        : `You + ${count - 1} others connected`;
-      document.getElementById("statusDisplay").textContent = status;
+      const connectedCount = count - 1;
+      document.getElementById("statusDisplay").textContent = connectedCount === 1 
+        ? `1 client connected` 
+        : `${connectedCount} clients connected`;
     });
     
     // Update metronome settings (host only)
@@ -619,12 +826,27 @@
       const ts = document.getElementById("timeSigInput").value;
       const subdiv = parseInt(document.getElementById("subdivisionInput").value);
       
+      // Update visual indicators
+      updateTimeSignatureVisual(ts);
+      updateSubdivisionVisual(subdiv);
+      
       socket.emit('updateSettings', {
         bpm,
         timeSignature: ts,
         subdivision: subdiv
       });
     }
+    
+    // Update metronome settings automatically when controls change
+    document.getElementById("timeSigInput").addEventListener('change', function() {
+      updateTimeSignatureVisual(this.value);
+      updateSettings();
+    });
+    
+    document.getElementById("subdivisionInput").addEventListener('change', function() {
+      updateSubdivisionVisual(parseInt(this.value));
+      updateSettings();
+    });
     
     // Start metronome (host only)
     function startMetronome() {
@@ -653,17 +875,25 @@
     // Set user role
     function setRole(r) {
       role = r;
-      document.getElementById("roleLabel").textContent = r.charAt(0).toUpperCase() + r.slice(1);
-      
+
       // Hide role chooser and show controls
       roleChooser.style.display = 'none';
       metronomeControls.style.display = 'block';
-      
-      // Show/hide host controls
+
+      // Show/hide appropriate elements based on role
       const isHost = r === 'host';
       document.getElementById("hostControls").style.display = isHost ? 'block' : 'none';
-      bpmControls.style.display = isHost ? 'flex' : 'none';
-      
+      clientVisuals.style.display = isHost ? 'none' : 'flex';
+      document.getElementById("bpmDisplay").style.display = isHost ? 'none' : 'block';
+      document.getElementById("statusInfo").style.display = isHost ? 'none' : 'block';
+
+      // *** Add this line to show dots immediately ***
+      updateBeatDots();
+
+      // Initialize visual indicators
+      updateTimeSignatureVisual(timeSignature);
+      updateSubdivisionVisual(subdivision);
+
       // Start time synchronization
       syncTime().then((success) => {
         if (success) {
