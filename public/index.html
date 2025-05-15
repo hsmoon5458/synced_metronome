@@ -26,7 +26,7 @@
 
     body.playing {
       background-color: var(--emerald-bg);
-      color: var(--emerald-text);
+      color: var(--default-text);
     }
 
     h1 {
@@ -43,7 +43,6 @@
       max-width: 600px;
       box-shadow: 0 6px 20px rgba(0,0,0,0.1);
       backdrop-filter: blur(10px);
-      transition: background 0.3s ease;
     }
 
     #hostControls {
@@ -59,10 +58,16 @@
       box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     }
 
+    #bpmDisplay {
+      font-size: 3rem;
+      font-weight: 700;
+      color: #000;
+    }
+
     .bpm-adjust {
       display: none;
+      flex-direction: column;
       align-items: center;
-      justify-content: center;
       gap: 1rem;
     }
 
@@ -132,20 +137,10 @@
     }
 
     @media (max-width: 600px) {
-      h1 {
-        font-size: 1.5rem;
-      }
-      button {
-        width: 100%;
-        margin: 0.5rem 0;
-      }
-      .beat-indicators {
-        gap: 1rem;
-      }
-      .dot {
-        width: 3rem;
-        height: 3rem;
-      }
+      h1 { font-size: 1.5rem; }
+      button { width: 100%; margin: 0.5rem 0; }
+      .beat-indicators { gap: 1rem; }
+      .dot { width: 3rem; height: 3rem; }
     }
   </style>
 </head>
@@ -160,10 +155,14 @@
       <button onclick="setRole('client')">Client</button>
     </p>
     <div class="bpm-adjust" id="bpmAdjust">
-      <button onclick="changeBpm(-1)">-</button>
-      <input id="bpmValue" readonly value="120">
-      <button onclick="changeBpm(1)">+</button>
+      <div>
+        <button onclick="changeBpm(-1)">-</button>
+        <input id="bpmValue" readonly value="120">
+        <button onclick="changeBpm(1)">+</button>
+      </div>
+      <input type="range" id="bpmSlider" min="30" max="300" value="120" style="width: 100%; margin-top: 1rem;">
     </div>
+    <p id="bpmDisplay">120</p>
     <p id="tsWrapper">Time Signature: <span id="tsDisplay">--</span></p>
     <p id="subdivWrapper">Subdivision: <span id="subdivDisplay">--</span></p>
     <p id="statusDisplay"></p>
@@ -193,6 +192,7 @@
       <button onclick="stopMetronome()">Stop</button>
     </div>
   </div>
+
   <script src="/socket.io/socket.io.js"></script>
   <script>
     const socket = io();
@@ -205,6 +205,7 @@
 
     const latencyAdjustInput = document.getElementById('latencyAdjust');
     const bpmAdjust = document.getElementById('bpmAdjust');
+    const bpmSlider = document.getElementById('bpmSlider');
     const tsWrapper = document.getElementById('tsWrapper');
     const subdivWrapper = document.getElementById('subdivWrapper');
     const roleChooser = document.getElementById('roleChooser');
@@ -229,11 +230,18 @@
 
     function changeBpm(delta) {
       bpm = Math.max(20, Math.min(300, bpm + delta));
+      bpmSlider.value = bpm;
       document.getElementById('bpmValue').value = bpm;
-      if (role === 'host') {
-        updateSettings();
-      }
+      document.getElementById("bpmDisplay").textContent = `BPM: ${bpm}`;
+      if (role === 'host') updateSettings();
     }
+
+    bpmSlider.addEventListener('input', () => {
+      bpm = parseInt(bpmSlider.value);
+      document.getElementById('bpmValue').value = bpm;
+      document.getElementById("bpmDisplay").textContent = `BPM: ${bpm}`;
+      if (role === 'host') updateSettings();
+    });
 
     latencyAdjustInput.addEventListener('input', (e) => {
       manualLatencyMs = parseInt(e.target.value);
@@ -295,6 +303,7 @@
     function syncClock(data) {
       bpm = data.bpm;
       document.getElementById('bpmValue').value = bpm;
+      bpmSlider.value = bpm;
       isRunning = data.isRunning;
       startTime = data.startTime;
       subdivision = data.subdivision || 1;
@@ -303,19 +312,34 @@
       updateBeatDots();
       document.getElementById("tsDisplay").textContent = timeSignature;
       document.getElementById("subdivDisplay").textContent = subdivision;
+      document.getElementById("bpmDisplay").textContent = `BPM: ${bpm}`;
       document.body.classList.toggle('playing', isRunning);
-      if (tickTimer) cancelAnimationFrame(tickTimer);
 
+      if (tickTimer) {
+        cancelAnimationFrame(tickTimer);
+        tickTimer = null;
+      }
+    
+      if (!isRunning) {
+        const dots = document.querySelectorAll('.dot');
+        dots.forEach(dot => dot.classList.remove('active'));
+        return;
+      }
+    
       if (isRunning && startTime) {
-        audioCtx.resume();
-        const delaySec = ((startTime - globalNow()) + manualLatencyMs) / 1000;
-        if (delaySec < 0) return;
-        setTimeout(() => {
-          nextTick = audioCtx.currentTime;
-          tickLoop();
-        }, delaySec * 1000);
+        audioCtx.resume().then(() => {
+          const delayMs = (startTime - globalNow()) + manualLatencyMs;
+          const clampedDelay = Math.max(0, delayMs); // never schedule in past
+          setTimeout(() => {
+            nextTick = audioCtx.currentTime;
+            tickLoop();
+          }, clampedDelay);
+        }).catch(err => {
+          console.warn("AudioContext failed to resume:", err);
+        });
       }
     }
+
 
     socket.on('sync', syncClock);
 
@@ -342,6 +366,7 @@
     }
 
     function stopMetronome() {
+      isRunning = false;
       socket.emit('stopMetronome');
     }
 
