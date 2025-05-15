@@ -23,7 +23,6 @@ app.get('/time', (req, res) => {
 
 io.on('connection', (socket) => {
   clients.add(socket.id);
-  console.log('Client connected:', socket.id);
   io.emit('clientCount', clients.size);
 
   // Always send current sync state to new clients
@@ -38,9 +37,8 @@ io.on('connection', (socket) => {
   socket.on('identify', (role) => {
     if (role === 'host') {
       hostSocketId = socket.id;
-      console.log('Host identified:', socket.id);
     }
-    // Re-emit to allow late client to sync again
+    // Sync state again on identification (for late joiners)
     socket.emit('sync', {
       bpm,
       startTime,
@@ -55,7 +53,6 @@ io.on('connection', (socket) => {
       bpm = settings.bpm;
       timeSignature = settings.timeSignature;
       subdivision = settings.subdivision;
-      console.log('Settings updated by host:', settings);
       io.emit('sync', {
         bpm,
         startTime,
@@ -68,9 +65,8 @@ io.on('connection', (socket) => {
 
   socket.on('startMetronome', () => {
     if (socket.id === hostSocketId) {
-      startTime = Date.now() + 1000; // start 1 sec in future
+      startTime = Date.now() + 1000;
       isRunning = true;
-      console.log('Metronome started at', new Date(startTime).toISOString());
       io.emit('sync', {
         bpm,
         startTime,
@@ -84,7 +80,7 @@ io.on('connection', (socket) => {
   socket.on('stopMetronome', () => {
     if (socket.id === hostSocketId) {
       isRunning = false;
-      console.log('Metronome stopped by host');
+      startTime = null;
       io.emit('sync', {
         bpm,
         startTime: null,
@@ -98,10 +94,8 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     clients.delete(socket.id);
     if (socket.id === hostSocketId) {
-      console.log('Host disconnected');
       hostSocketId = null;
     }
-    console.log('Client disconnected:', socket.id);
     io.emit('clientCount', clients.size);
   });
 });

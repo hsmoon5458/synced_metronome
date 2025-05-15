@@ -21,22 +21,19 @@
       margin: 0;
       background-color: var(--default-bg);
       color: var(--default-text);
-      transition: background-color 0.3s ease, color 0.3s ease;
+      transition: background-color 0.3s, color 0.3s;
     }
-
     body.playing {
       background-color: var(--emerald-bg);
       color: var(--default-text);
     }
-
     h1 {
       margin-bottom: 1rem;
       font-size: 2rem;
       font-weight: 600;
     }
-
     #controls {
-      background: rgba(255, 255, 255, 0.8);
+      background: rgba(255,255,255,0.85);
       border-radius: 1rem;
       padding: 1.5rem;
       margin: 1rem auto;
@@ -44,7 +41,6 @@
       box-shadow: 0 6px 20px rgba(0,0,0,0.1);
       backdrop-filter: blur(10px);
     }
-
     #hostControls {
       display: grid;
       gap: 1rem;
@@ -57,52 +53,44 @@
       border-radius: 1rem;
       box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     }
-
     #bpmDisplay {
       font-size: 3rem;
       font-weight: 700;
       color: #000;
     }
-
     .bpm-adjust {
       display: none;
       flex-direction: column;
       align-items: center;
       gap: 1rem;
     }
-
     .bpm-adjust button {
       font-size: 1.5rem;
       padding: 0.5rem 1rem;
       width: 3rem;
     }
-
     #bpmValue {
       font-size: 1.5rem;
       width: 4rem;
       text-align: center;
     }
-
     .beat-indicators {
       display: flex;
       justify-content: center;
       gap: 1.5rem;
       margin: 2rem auto 1rem;
     }
-
     .dot {
       width: 4rem;
       height: 4rem;
       border-radius: 50%;
       background: #ccc;
-      transition: background 0.2s ease, transform 0.2s ease;
+      transition: background 0.2s, transform 0.2s;
     }
-
     .dot.active {
       background: var(--button-bg);
       transform: scale(1.2);
     }
-
     button {
       padding: 0.8rem 1.5rem;
       font-size: 1rem;
@@ -112,21 +100,18 @@
       background: var(--button-bg);
       color: white;
       cursor: pointer;
-      box-shadow: 0 4px 10px rgba(0, 122, 255, 0.2);
-      transition: background 0.3s ease, transform 0.2s ease;
+      box-shadow: 0 4px 10px rgba(0,122,255,0.2);
+      transition: background 0.3s, transform 0.2s;
     }
-
     button:hover {
       background: var(--button-hover);
       transform: translateY(-1px);
     }
-
     label {
       display: block;
       margin-top: 0.5rem;
       font-weight: 500;
     }
-
     select, input[type="range"] {
       width: 100%;
       padding: 0.6rem;
@@ -140,7 +125,6 @@
 <body>
   <h1>Synced Metronome</h1>
   <div class="beat-indicators" id="beatDots"></div>
-
   <div id="controls">
     <p id="roleChooser">
       Your Role: <strong id="roleLabel">Not Set</strong><br>
@@ -160,7 +144,6 @@
     <p id="subdivWrapper">Subdivision: <span id="subdivDisplay">--</span></p>
     <p id="statusDisplay"></p>
   </div>
-
   <div id="hostControls" style="display:none;">
     <label for="timeSigInput">Time Signature:</label>
     <select id="timeSigInput">
@@ -168,24 +151,20 @@
       <option value="3/4">3/4</option>
       <option value="6/8">6/8</option>
     </select>
-
     <label for="subdivisionInput">Subdivision:</label>
     <select id="subdivisionInput">
       <option value="1">Quarter Note (1/4)</option>
       <option value="2">Eighth Note (1/8)</option>
       <option value="4">Sixteenth Note (1/16)</option>
     </select>
-
     <label for="latencyAdjust">Latency Compensation (ms):</label>
     <input type="range" id="latencyAdjust" min="-500" max="500" value="0">
-
     <div style="display:flex; gap:1rem; justify-content:center; flex-wrap:wrap; margin-top: 1rem;">
       <button onclick="updateSettings()">Set Settings</button>
       <button onclick="startMetronome()">Start</button>
       <button onclick="stopMetronome()">Stop</button>
     </div>
   </div>
-
   <script src="/socket.io/socket.io.js"></script>
   <script>
     const socket = io();
@@ -205,9 +184,7 @@
     const roleChooser = document.getElementById('roleChooser');
 
     document.body.addEventListener('click', () => {
-      if (audioCtx.state === 'suspended') {
-        audioCtx.resume();
-      }
+      if (audioCtx.state === 'suspended') audioCtx.resume();
     });
 
     function updateBeatDots() {
@@ -220,29 +197,23 @@
         container.appendChild(dot);
       }
     }
-
     function highlightDot(index) {
       const dots = document.querySelectorAll('.dot');
-      dots.forEach((dot, i) => {
-        dot.classList.toggle('active', i === index);
-      });
+      dots.forEach((dot, i) => dot.classList.toggle('active', i === index));
     }
-
     function changeBpm(delta) {
       bpm = Math.max(20, Math.min(300, bpm + delta));
       bpmSlider.value = bpm;
       document.getElementById('bpmValue').value = bpm;
-      document.getElementById("bpmDisplay").textContent = `BPM: ${bpm}`;
+      document.getElementById("bpmDisplay").textContent = bpm;
       if (role === 'host') updateSettings();
     }
-
     bpmSlider.addEventListener('input', () => {
       bpm = parseInt(bpmSlider.value);
       document.getElementById('bpmValue').value = bpm;
-      document.getElementById("bpmDisplay").textContent = `BPM: ${bpm}`;
+      document.getElementById("bpmDisplay").textContent = bpm;
       if (role === 'host') updateSettings();
     });
-
     latencyAdjustInput.addEventListener('input', (e) => {
       manualLatencyMs = parseInt(e.target.value);
     });
@@ -263,11 +234,9 @@
       samples.sort((a, b) => a - b);
       timeOffset = samples[Math.floor(samples.length / 2)];
     }
-
     function globalNow() {
       return Date.now() + timeOffset;
     }
-
     function scheduleClick(time, isDownbeat = false) {
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
@@ -279,14 +248,12 @@
       osc.start(time);
       osc.stop(time + 0.05);
     }
-
     function tickLoop() {
       if (!isRunning) return;
       const interval = (60 / bpm) / subdivision;
       const now = audioCtx.currentTime;
       const beatsPerBar = parseInt(timeSignature.split('/')[0]);
       const ticksPerBar = beatsPerBar * subdivision;
-
       while (nextTick < now + 0.2) {
         const isDownbeat = (beatCount % ticksPerBar === 0);
         scheduleClick(nextTick, isDownbeat);
@@ -300,17 +267,16 @@
       tickTimer = requestAnimationFrame(tickLoop);
     }
 
+    // Main sync handler
     function syncClock(data) {
       bpm = data.bpm;
       subdivision = data.subdivision || 1;
       timeSignature = data.timeSignature || '4/4';
-
       document.getElementById('bpmValue').value = bpm;
       bpmSlider.value = bpm;
-      document.getElementById("bpmDisplay").textContent = `BPM: ${bpm}`;
+      document.getElementById("bpmDisplay").textContent = bpm;
       document.getElementById("tsDisplay").textContent = timeSignature;
       document.getElementById("subdivDisplay").textContent = subdivision;
-
       isRunning = data.isRunning;
       document.body.classList.toggle('playing', isRunning);
 
@@ -323,23 +289,20 @@
         document.querySelectorAll('.dot').forEach(dot => dot.classList.remove('active'));
         return;
       }
-    
       if (data.startTime && !tickingStarted) {
         startTime = data.startTime;
         beatCount = 0;
         updateBeatDots();
-      
+        tickingStarted = true;
         audioCtx.resume().then(() => {
           const now = globalNow();
           const intervalMs = (60000 / bpm) / subdivision;
-        
           const elapsedMs = now - startTime + manualLatencyMs;
           const ticksSinceStart = Math.floor(elapsedMs / intervalMs);
           const nextTickTimeMs = startTime + (ticksSinceStart + 1) * intervalMs;
-        
           const delayMs = nextTickTimeMs - now;
           const clampedDelay = Math.max(0, delayMs);
-        
+
           setTimeout(() => {
             nextTick = audioCtx.currentTime + clampedDelay / 1000;
             beatCount = ticksSinceStart + 1;
@@ -350,7 +313,6 @@
     }
 
     socket.on('sync', syncClock);
-
     socket.on('clientCount', (count) => {
       const status = (role === 'host')
         ? `Clients connected: ${count - 1}`
@@ -367,21 +329,19 @@
         subdivision: subdiv
       });
     }
-
     function startMetronome() {
       audioCtx.resume();
       socket.emit('startMetronome');
     }
-
     function stopMetronome() {
       isRunning = false;
       if (tickTimer) {
         cancelAnimationFrame(tickTimer);
         tickTimer = null;
       }
+      tickingStarted = false;
       socket.emit('stopMetronome');
     }
-
     function setRole(r) {
       role = r;
       document.getElementById("roleLabel").textContent = r;
