@@ -1,3 +1,4 @@
+// server.js
 const express = require('express');
 const http = require('http');
 const socketIO = require('socket.io');
@@ -58,7 +59,7 @@ io.on('connection', (socket) => {
 
   socket.on('startMetronome', () => {
     if (socket.id === hostSocketId) {
-      startTime = Date.now() + 1000;
+      startTime = Date.now() + 1000; // 1 second in future
       isRunning = true;
       console.log('Metronome started at', new Date(startTime).toISOString());
       io.emit('sync', {
