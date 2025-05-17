@@ -663,19 +663,34 @@
     
     // Schedule a metronome click sound
     function scheduleClick(time, isAccent = false) {
-      const osc = audioCtx.createOscillator();
+      // Percussive noise burst (accent is louder and longer)
+      const noiseLength = isAccent ? 0.08 : 0.05;
+      const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate * noiseLength, audioCtx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < data.length; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (isAccent ? 140 : 200)); // slower decay for accent
+      }
+      const noise = audioCtx.createBufferSource();
+      noise.buffer = buffer;
+    
       const gain = audioCtx.createGain();
-      
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-      
-      // Set volume and frequency based on whether it's an accent
-      gain.gain.setValueAtTime(isAccent ? 0.3 : 0.2, time);
-      gain.gain.exponentialRampToValueAtTime(0.001, time + 0.05);
-      
-      osc.frequency.setValueAtTime(isAccent ? 1700 : 1000, time);
+      gain.gain.setValueAtTime(isAccent ? 2.0 : 1.0, time);  // Accent much louder
+      gain.gain.linearRampToValueAtTime(0.001, time + noiseLength);
+    
+      noise.connect(gain).connect(audioCtx.destination);
+      noise.start(time);
+    
+      // Oscillator (accent: higher pitch & different timbre)
+      const osc = audioCtx.createOscillator();
+      const oscGain = audioCtx.createGain();
+      osc.type = isAccent ? 'square' : 'triangle';  // Sawtooth is bright, stands out
+      osc.frequency.setValueAtTime(isAccent ? 1700 : 1000, time); // Higher accent pitch
+      oscGain.gain.setValueAtTime(isAccent ? 10.0 : 5.0, time); // above 1.0 is amplification.
+      oscGain.gain.linearRampToValueAtTime(0.001, time + (isAccent ? 0.09 : 0.05));
+    
+      osc.connect(oscGain).connect(audioCtx.destination);
       osc.start(time);
-      osc.stop(time + 0.05);
+      osc.stop(time + (isAccent ? 0.09 : 0.05));
     }
     
     // Main metronome loop
