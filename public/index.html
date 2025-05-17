@@ -6,14 +6,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     :root {
-      --primary: #007AFF;
-      --primary-dark: #0051c3;
-      --playing-bg: #10b981;
-      --text: #333;
+      --primary: #665cff;
+      --primary-dark: #483ed8;
+      --accent: #fbbf24;
+      /* Updated playing background for stronger contrast */
+      --playing-bg: linear-gradient(135deg, #4ade80 0%, #60a5fa 100%);
+      --text: #2c2e4a;
       --text-light: #fff;
-      --bg-light: #fff;
-      --bg-card: rgba(255, 255, 255, 0.85);
-      --shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+      --bg-light: linear-gradient(135deg, #fff7e6 0%, #e0e7ff 100%);
+      --bg-card: rgba(255, 255, 255, 0.75);
+      --shadow: 0 8px 32px 0 rgba(102, 92, 255, 0.12);
     }
 
     body {
@@ -21,172 +23,210 @@
       text-align: center;
       padding: 2rem;
       margin: 0;
-      background-color: var(--bg-light);
+      background: var(--bg-light);
       color: var(--text);
-      transition: background-color 0.3s ease, color 0.3s ease;
+      transition: background-color 0.5s, color 0.5s;
       line-height: 1.5;
+      min-height: 100vh;
     }
-
+    
+    /* Made playing state more prominent with a stronger color change */
     body.playing {
-      background-color: var(--playing-bg);
+      background: var(--playing-bg);
     }
-
+    
     h1 {
       margin-bottom: 1.5rem;
-      font-size: 2.25rem;
-      font-weight: 700;
+      font-size: 2.5rem;
+      font-weight: 800;
+      color: var(--primary);
+      letter-spacing: -1px;
+      text-shadow: 0 2px 8px rgba(102, 92, 255, 0.15);
     }
-
+    
     .card {
       background: var(--bg-card);
-      border-radius: 1rem;
-      padding: 1.5rem;
+      border-radius: 1.5rem;
+      padding: 2rem 1.5rem;
       margin: 1.5rem auto;
       max-width: 600px;
       box-shadow: var(--shadow);
-      backdrop-filter: blur(10px);
+      backdrop-filter: blur(18px);
+      border: 1px solid #ece8ff;
     }
-
+    
     #bpmDisplay {
       font-size: 3.5rem;
       font-weight: 700;
-      color: #000;
+      color: var(--primary-dark);
       margin: 0.5rem 0;
+      text-shadow: 0 2px 6px #fff8, 0 1px 0 #d1d5db;
     }
-
+    
     .bpm-controls {
       display: none;
       flex-direction: column;
       align-items: center;
-      gap: 1rem;
-      margin-top: 1rem;
+      gap: 0.6rem;
+      margin-top: 0.5rem;
     }
-
+    
     .bpm-buttons {
       display: flex;
       align-items: center;
-      gap: 0.5rem;
+      gap: 0.8rem;
     }
-
+    
     .bpm-buttons button {
       font-size: 1.5rem;
       padding: 0.5rem 1rem;
-      width: 3rem;
+      width: 3.2rem;
+      border-radius: 50%;
+      background: var(--primary);
+      color: var(--text-light);
+      box-shadow: 0 2px 8px #bdb2ff66;
+      border: none;
+      transition: background 0.2s;
     }
-
+    .bpm-buttons button:hover {
+      background: var(--primary-dark);
+    }
+    
     #bpmValue {
       font-size: 1.5rem;
       width: 4rem;
       text-align: center;
       padding: 0.5rem;
-      border: 1px solid #ccc;
+      border: 1.5px solid #bdb2ff;
       border-radius: 0.5rem;
+      background: #f5f3ff;
+      color: var(--primary-dark);
     }
-
+    
     .beat-indicators {
       display: flex;
       justify-content: center;
-      gap: 1.5rem;
-      margin: 2rem auto 1.5rem;
+      gap: 2rem;
+      margin: 2.3rem auto 1.5rem;
     }
-
+    
     .dot {
-      width: 3rem;
-      height: 3rem;
+      width: 3.5rem;
+      height: 3.5rem;
       border-radius: 50%;
-      background: #ddd;
-      transition: background 0.2s ease, transform 0.2s ease;
+      background: linear-gradient(145deg, #d1c4fb 40%, #fff 100%);
+      box-shadow: 0 0 0.7rem #bdb2ff77, 0 0.2rem 0.5rem #665cff25;
+      transition: background 0.15s, box-shadow 0.15s, transform 0.15s;
     }
-
+    
+    /* Updated dot active state to be more natural */
     .dot.active {
-      background: var(--primary);
-      transform: scale(1.2);
+      background: radial-gradient(circle at 30% 30%, #22c55e 0%, #10b981 100%);
+      box-shadow: 0 0 18px rgba(16, 185, 129, 0.7), 0 0 25px rgba(34, 197, 94, 0.4);
+      transform: scale(1.15);
+      border: 2px solid rgba(255, 255, 255, 0.8);
     }
-
+    
     .dot.accent {
-      border: 3px solid var(--primary-dark);
+      border: 3px solid var(--accent);
     }
-
+    
+    /* For first beat accent, make it visually different but related */
+    .dot.accent.active {
+      background: radial-gradient(circle at 30% 30%, #34d399 0%, #059669 100%);
+      box-shadow: 0 0 18px rgba(5, 150, 105, 0.7), 0 0 25px rgba(52, 211, 153, 0.4);
+      border: 3px solid rgba(255, 255, 255, 0.9);
+    }
+    
     button {
-      padding: 0.8rem 1.5rem;
+      padding: 0.8rem 1.7rem;
       font-size: 1rem;
       margin: 0.3rem;
       border: none;
-      border-radius: 1rem;
+      border-radius: 1.5rem;
       background: var(--primary);
       color: white;
       cursor: pointer;
-      box-shadow: 0 4px 10px rgba(0, 122, 255, 0.2);
-      transition: background 0.3s ease, transform 0.2s ease;
+      box-shadow: 0 4px 10px #bdb2ff33;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      transition: background 0.2s, box-shadow 0.2s, transform 0.2s;
     }
-
+    
     button:hover {
       background: var(--primary-dark);
-      transform: translateY(-1px);
+      transform: translateY(-1.5px) scale(1.03);
+      box-shadow: 0 6px 16px #a7ffe955;
     }
-
+    
     button:disabled {
       background: #ccc;
       cursor: not-allowed;
       transform: none;
     }
-
+    
     button.stop {
       background: #ef4444;
+      color: #fff;
+      box-shadow: 0 4px 12px #ef444477;
     }
-
     button.stop:hover {
       background: #dc2626;
     }
-
+    
     .form-group {
-      margin-bottom: 1rem;
+      margin-bottom: 0.8rem;
     }
-
+    
     label {
       display: block;
       margin-bottom: 0.5rem;
       font-weight: 500;
       text-align: left;
+      color: var(--primary-dark);
     }
-
+    
     select, input[type="range"] {
       width: 100%;
-      padding: 0.6rem;
-      margin-bottom: 0.5rem;
-      border-radius: 0.5rem;
-      border: 1px solid #ccc;
-      background: #f9f9f9;
+      padding: 0.7rem;
+      margin-bottom: 0.4rem;
+      border-radius: 0.7rem;
+      border: 1.5px solid #bdb2ff;
+      background: #f5f3ff;
+      color: var(--primary-dark);
+      font-size: 1.1rem;
     }
-
+    
     .settings-grid {
       display: grid;
-      gap: 1rem;
+      gap: 0.8rem;
     }
-
+    
     .button-group {
       display: flex;
       flex-wrap: wrap;
       justify-content: center;
-      gap: 0.5rem;
-      margin-top: 1.5rem;
+      gap: 0.9rem;
+      margin-top: 2rem;
     }
-
+    
     .info-text {
-      font-size: 1.1rem;
+      font-size: 1.12rem;
       font-weight: 500;
+      color: #483ed8;
     }
-
+    
     #statusDisplay {
-      margin-top: 1rem;
-      font-size: 0.9rem;
-      opacity: 0.8;
+      margin-top: 1.2rem;
+      font-size: 1rem;
+      opacity: 0.9;
+      color: #444b;
     }
-
+    
     #latencyDisplay {
-      font-size: 0.8rem;
-      margin-top: 0.5rem;
-      color: #666;
+      font-size: 0.98rem;
+      margin-top: 0.6rem;
+      color: #665cffaa;
     }
     
     /* Visual indicators for time signature and subdivision */
@@ -196,7 +236,6 @@
       gap: 2rem;
       margin: 1.5rem auto;
     }
-    
     .visual-indicator {
       display: flex;
       flex-direction: column;
@@ -205,33 +244,33 @@
     
     .time-sig-visual {
       position: relative;
-      width: 40px;
+      width: 44px;
       height: 60px;
       margin-bottom: 0.5rem;
+      background: #f5f3ff;
+      border-radius: 0.5rem;
+      box-shadow: 0 1px 6px #bdb2ff33;
     }
-    
     .time-sig-visual .numerator,
     .time-sig-visual .denominator {
       position: absolute;
       width: 100%;
       text-align: center;
-      font-size: 1.5rem;
+      font-size: 1.7rem;
       font-weight: bold;
+      color: var(--primary-dark);
     }
-    
     .time-sig-visual .numerator {
       top: 0;
     }
-    
     .time-sig-visual .denominator {
       bottom: 0;
     }
-    
     .time-sig-visual .divider {
       position: absolute;
       width: 100%;
       height: 2px;
-      background-color: black;
+      background-color: var(--primary-dark);
       top: 50%;
       transform: translateY(-50%);
     }
@@ -239,83 +278,76 @@
     .subdiv-visual {
       display: flex;
       justify-content: center;
-      gap: 2px;
+      gap: 3px;
     }
     
     .note {
-      width: 12px;
-      height: 28px;
+      width: 13px;
+      height: 30px;
       position: relative;
     }
-    
     .note-head {
-      width: 10px;
-      height: 10px;
-      background: black;
+      width: 11px;
+      height: 11px;
+      background: var(--primary-dark);
       border-radius: 50%;
       position: absolute;
       bottom: 0;
     }
-    
     .note-stem {
       width: 2px;
-      height: 28px;
-      background: black;
+      height: 30px;
+      background: var(--primary-dark);
       position: absolute;
       bottom: 0;
       right: 0;
     }
-    
     .note-flag {
-      width: 8px;
-      height: 10px;
-      background: black;
+      width: 9px;
+      height: 11px;
+      background: var(--accent);
       position: absolute;
       top: 0;
       right: 0;
-      border-radius: 0 0 8px 0;
+      border-radius: 0 0 9px 0;
     }
-    
     .triplet-bracket {
-      width: 40px;
-      height: 10px;
-      border-top: 2px solid black;
-      border-left: 2px solid black;
-      border-right: 2px solid black;
+      width: 44px;
+      height: 11px;
+      border-top: 2px solid var(--primary-dark);
+      border-left: 2px solid var(--primary-dark);
+      border-right: 2px solid var(--primary-dark);
       position: relative;
       margin-top: 5px;
     }
-    
     .triplet-bracket::after {
       content: "3";
       position: absolute;
       top: -15px;
       left: 50%;
       transform: translateX(-50%);
-      font-size: 12px;
+      font-size: 13px;
       font-weight: bold;
+      color: var(--primary-dark);
     }
-
+    
     @media (max-width: 480px) {
       .beat-indicators {
-        gap: 0.8rem;
+        gap: 0.7rem;
       }
-      
       .dot {
-        width: 2rem;
-        height: 2rem;
+        width: 2.1rem;
+        height: 2.1rem;
       }
-      
       #bpmDisplay {
-        font-size: 2.8rem;
+        font-size: 2.2rem;
       }
-      
       h1 {
-        font-size: 1.8rem;
+        font-size: 2.0rem;
+        font-weight: 500;
       }
-      
       .visual-indicators {
-        gap: 1rem;
+        gap: 0.6rem;
       }
     }
   </style>
@@ -401,6 +433,7 @@
       </div>
     </div>
   </div>
+</body>
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
@@ -751,6 +784,7 @@
       // Update visual indicators
       updateTimeSignatureVisual(timeSignature);
       updateSubdivisionVisual(subdivision);
+      updateBeatDots();
       
       // Update running state
       const wasRunning = isRunning;
@@ -842,6 +876,8 @@
       // Update visual indicators
       updateTimeSignatureVisual(ts);
       updateSubdivisionVisual(subdiv);
+
+      updateBeatDots();
       
       socket.emit('updateSettings', {
         bpm,
@@ -915,5 +951,4 @@
       });
     }
   </script>
-</body>
 </html>
