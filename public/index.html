@@ -1,7 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Synced Metronome</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
@@ -19,6 +20,7 @@
     }
 
     body {
+      touch-action: manipulation;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
       text-align: center;
       padding: 2rem;
@@ -29,12 +31,12 @@
       line-height: 1.5;
       min-height: 100vh;
     }
-    
+
     /* Made playing state more prominent with a stronger color change */
     body.playing {
       background: var(--playing-bg);
     }
-    
+
     h1 {
       margin-bottom: 1.5rem;
       font-size: 2.5rem;
@@ -43,7 +45,7 @@
       letter-spacing: -1px;
       text-shadow: 0 2px 8px rgba(102, 92, 255, 0.15);
     }
-    
+
     .card {
       background: var(--bg-card);
       border-radius: 1.5rem;
@@ -54,7 +56,7 @@
       backdrop-filter: blur(18px);
       border: 1px solid #ece8ff;
     }
-    
+
     #bpmDisplay {
       font-size: 3.5rem;
       font-weight: 700;
@@ -62,7 +64,7 @@
       margin: 0.5rem 0;
       text-shadow: 0 2px 6px #fff8, 0 1px 0 #d1d5db;
     }
-    
+
     .bpm-controls {
       display: none;
       flex-direction: column;
@@ -70,14 +72,16 @@
       gap: 0.6rem;
       margin-top: 0.5rem;
     }
-    
+
     .bpm-buttons {
+      touch-action: manipulation;
       display: flex;
       align-items: center;
       gap: 0.8rem;
     }
-    
+
     .bpm-buttons button {
+      touch-action: manipulation;
       font-size: 1.5rem;
       padding: 0.5rem 1rem;
       width: 3.2rem;
@@ -88,10 +92,11 @@
       border: none;
       transition: background 0.2s;
     }
+
     .bpm-buttons button:hover {
       background: var(--primary-dark);
     }
-    
+
     #bpmValue {
       font-size: 1.5rem;
       width: 4rem;
@@ -102,14 +107,14 @@
       background: #f5f3ff;
       color: var(--primary-dark);
     }
-    
+
     .beat-indicators {
       display: flex;
       justify-content: center;
       gap: 2rem;
       margin: 2.3rem auto 1.5rem;
     }
-    
+
     .dot {
       width: 3.5rem;
       height: 3.5rem;
@@ -118,7 +123,7 @@
       box-shadow: 0 0 0.7rem #bdb2ff77, 0 0.2rem 0.5rem #665cff25;
       transition: background 0.15s, box-shadow 0.15s, transform 0.15s;
     }
-    
+
     /* Updated dot active state to be more natural */
     .dot.active {
       background: radial-gradient(circle at 30% 30%, #22c55e 0%, #10b981 100%);
@@ -126,18 +131,18 @@
       transform: scale(1.15);
       border: 2px solid rgba(255, 255, 255, 0.8);
     }
-    
+
     .dot.accent {
       border: 3px solid var(--accent);
     }
-    
+
     /* For first beat accent, make it visually different but related */
     .dot.accent.active {
       background: radial-gradient(circle at 30% 30%, #34d399 0%, #059669 100%);
       box-shadow: 0 0 18px rgba(5, 150, 105, 0.7), 0 0 25px rgba(52, 211, 153, 0.4);
       border: 3px solid rgba(255, 255, 255, 0.9);
     }
-    
+
     button {
       padding: 0.8rem 1.7rem;
       font-size: 1rem;
@@ -152,32 +157,33 @@
       letter-spacing: 0.03em;
       transition: background 0.2s, box-shadow 0.2s, transform 0.2s;
     }
-    
+
     button:hover {
       background: var(--primary-dark);
       transform: translateY(-1.5px) scale(1.03);
       box-shadow: 0 6px 16px #a7ffe955;
     }
-    
+
     button:disabled {
       background: #ccc;
       cursor: not-allowed;
       transform: none;
     }
-    
+
     button.stop {
       background: #ef4444;
       color: #fff;
       box-shadow: 0 4px 12px #ef444477;
     }
+
     button.stop:hover {
       background: #dc2626;
     }
-    
+
     .form-group {
       margin-bottom: 0.8rem;
     }
-    
+
     label {
       display: block;
       margin-bottom: 0.5rem;
@@ -185,8 +191,9 @@
       text-align: left;
       color: var(--primary-dark);
     }
-    
-    select, input[type="range"] {
+
+    select,
+    input[type="range"] {
       width: 100%;
       padding: 0.7rem;
       margin-bottom: 0.4rem;
@@ -196,12 +203,12 @@
       color: var(--primary-dark);
       font-size: 1.1rem;
     }
-    
+
     .settings-grid {
       display: grid;
       gap: 0.8rem;
     }
-    
+
     .button-group {
       display: flex;
       flex-wrap: wrap;
@@ -209,26 +216,26 @@
       gap: 0.9rem;
       margin-top: 2rem;
     }
-    
+
     .info-text {
       font-size: 1.12rem;
       font-weight: 500;
       color: #483ed8;
     }
-    
+
     #statusDisplay {
       margin-top: 1.2rem;
       font-size: 1rem;
       opacity: 0.9;
       color: #444b;
     }
-    
+
     #latencyDisplay {
       font-size: 0.98rem;
       margin-top: 0.6rem;
       color: #665cffaa;
     }
-    
+
     /* Visual indicators for time signature and subdivision */
     .visual-indicators {
       display: flex;
@@ -236,12 +243,13 @@
       gap: 2rem;
       margin: 1.5rem auto;
     }
+
     .visual-indicator {
       display: flex;
       flex-direction: column;
       align-items: center;
     }
-    
+
     .time-sig-visual {
       position: relative;
       width: 44px;
@@ -251,6 +259,7 @@
       border-radius: 0.5rem;
       box-shadow: 0 1px 6px #bdb2ff33;
     }
+
     .time-sig-visual .numerator,
     .time-sig-visual .denominator {
       position: absolute;
@@ -260,12 +269,15 @@
       font-weight: bold;
       color: var(--primary-dark);
     }
+
     .time-sig-visual .numerator {
       top: 0;
     }
+
     .time-sig-visual .denominator {
       bottom: 0;
     }
+
     .time-sig-visual .divider {
       position: absolute;
       width: 100%;
@@ -274,18 +286,19 @@
       top: 50%;
       transform: translateY(-50%);
     }
-    
+
     .subdiv-visual {
       display: flex;
       justify-content: center;
       gap: 3px;
     }
-    
+
     .note {
       width: 13px;
       height: 30px;
       position: relative;
     }
+
     .note-head {
       width: 11px;
       height: 11px;
@@ -294,6 +307,7 @@
       position: absolute;
       bottom: 0;
     }
+
     .note-stem {
       width: 2px;
       height: 30px;
@@ -302,6 +316,7 @@
       bottom: 0;
       right: 0;
     }
+
     .note-flag {
       width: 9px;
       height: 11px;
@@ -311,6 +326,7 @@
       right: 0;
       border-radius: 0 0 9px 0;
     }
+
     .triplet-bracket {
       width: 44px;
       height: 11px;
@@ -320,6 +336,7 @@
       position: relative;
       margin-top: 5px;
     }
+
     .triplet-bracket::after {
       content: "3";
       position: absolute;
@@ -330,28 +347,75 @@
       font-weight: bold;
       color: var(--primary-dark);
     }
-    
+
     @media (max-width: 480px) {
       .beat-indicators {
         gap: 0.7rem;
       }
+
       .dot {
         width: 2.1rem;
         height: 2.1rem;
       }
+
       #bpmDisplay {
         font-size: 2.2rem;
       }
+
       h1 {
         font-size: 2.0rem;
         font-weight: 500;
       }
+
       .visual-indicators {
         gap: 0.6rem;
       }
     }
+
+    #presetBank {
+      margin-top: 1.5em;
+    }
+
+    #presetList {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    #presetList button.preset-btn {
+      border: none;
+      background: none;
+      font-size: 0.85em;
+      color: #007aff;
+      padding: 2px 0;
+      margin-left: 0.3em;
+      border-radius: 4px;
+      cursor: pointer;
+      opacity: 0.85;
+      transition: background 0.2s, opacity 0.2s;
+      /* Set fixed width */
+      min-width: 46px;
+      text-align: center;
+      display: inline-block;
+    }
+
+    #presetList button.preset-btn:hover {
+      background: #e9f2ff;
+      opacity: 1;
+    }
+
+    #presetList li {
+      display: flex;
+      align-items: center;
+      font-size: 0.97em;
+      margin: 0.18em 0;
+      padding: 0.1em 0.18em;
+      background: #f6faff;
+      border-radius: 7px;
+    }
   </style>
 </head>
+
 <body>
   <h1>Synced Metronome</h1>
   <div class="beat-indicators" id="beatDots"></div>
@@ -369,7 +433,7 @@
 
     <div id="metronomeControls" style="display:none;">
       <p id="bpmDisplay">120</p>
-      
+
       <!-- Visual indicators for time signature and subdivision - only shown for clients -->
       <div id="clientVisuals" class="visual-indicators">
         <div class="visual-indicator">
@@ -385,7 +449,7 @@
           </div>
         </div>
       </div>
-      
+
       <!-- Group status info together for easy hiding -->
       <div id="statusInfo">
         <p id="statusDisplay"></p>
@@ -431,541 +495,628 @@
         <button id="startButton" onclick="startMetronome()">Start</button>
         <button id="stopButton" class="stop" onclick="stopMetronome()" disabled>Stop</button>
       </div>
+
+      <div id="presetBank">
+        <h3>Preset Bank</h3>
+        <button onclick="handleSavePreset()">Save Current Preset</button>
+        <ul id="presetList"></ul>
+      </div>
+
     </div>
   </div>
 </body>
 
-  <script src="/socket.io/socket.io.js"></script>
-  <script>
-    const socket = io();
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    
-    // Metronome state
-    let bpm = 120;
-    let isRunning = false;
-    let startTime = null;
-    let nextTick = 0;
-    let role = null;
-    let timeOffset = 0;
-    let tickTimer = null;
-    let subdivision = 1;
-    let timeSignature = '4/4';
-    let beatCount = 0;
-    let syncing = false;
-    let wakeLock = null;
-    
-    // DOM Elements
-    const metronomeControls = document.getElementById('metronomeControls');
-    const roleChooser = document.getElementById('roleChooser');
-    const bpmControls = document.getElementById('bpmControls');
-    const bpmSlider = document.getElementById('bpmSlider');
-    const bpmInput = document.getElementById('bpmValue');
-    const startButton = document.getElementById('startButton');
-    const stopButton = document.getElementById('stopButton');
-    const clientVisuals = document.getElementById('clientVisuals');
-    
-    // Enable audio context on user interaction
-    document.body.addEventListener('click', () => {
-      if (audioCtx.state === 'suspended') {
-        audioCtx.resume();
-      }
-    });
-    
-    // Update BPM value display when slider changes
-    bpmSlider.addEventListener('input', () => {
-      bpm = parseInt(bpmSlider.value);
-      bpmInput.value = bpm;
-      document.getElementById("bpmDisplay").textContent = `${bpm}`;
-      if (role === 'host') {
-        debounceUpdateSettings();
-      }
-    });
-    
-    // Handle direct BPM input changes
-    bpmInput.addEventListener('change', () => {
-      let newBpm = parseInt(bpmInput.value);
-      // Clamp BPM to valid range
-      newBpm = Math.max(30, Math.min(300, newBpm || 120));
-      bpm = newBpm;
-      bpmInput.value = bpm;
-      bpmSlider.value = bpm;
-      document.getElementById("bpmDisplay").textContent = `${bpm}`;
-      if (role === 'host') {
-        updateSettings();
-      }
-    });
-    
-    async function requestWakeLock() {
-      try {
-        if ('wakeLock' in navigator) {
-          wakeLock = await navigator.wakeLock.request('screen');
-          wakeLock.addEventListener('release', () => {
-            console.log('Wake Lock was released');
-          });
-          console.log('Wake Lock is active');
-        }
-      } catch (err) {
-        console.error(`Wake Lock error: ${err.name}, ${err.message}`);
-      }
-    }
+<script src="/socket.io/socket.io.js"></script>
+<script>
+  const socket = io();
+  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-    // Update time signature visual display
-    function updateTimeSignatureVisual(ts) {
-      const [numerator, denominator] = ts.split('/').map(Number);
-      const visual = document.getElementById('timeSignatureVisual');
-      
-      const numeratorEl = visual.querySelector('.numerator');
-      const denominatorEl = visual.querySelector('.denominator');
-      
-      numeratorEl.textContent = numerator;
-      denominatorEl.textContent = denominator;
-    }
-    
-    // Update subdivision visual display
-    function updateSubdivisionVisual(subdiv) {
-      const container = document.getElementById('subdivisionVisual');
-      container.innerHTML = '';
-      
-      switch(subdiv) {
-        case 1:
-          // Quarter note
-          const quarterNote = document.createElement('div');
-          quarterNote.className = 'note';
-          
-          const quarterHead = document.createElement('div');
-          quarterHead.className = 'note-head';
-          
-          const quarterStem = document.createElement('div');
-          quarterStem.className = 'note-stem';
-          
-          quarterNote.appendChild(quarterHead);
-          quarterNote.appendChild(quarterStem);
-          container.appendChild(quarterNote);
-          break;
-          
-        case 2:
-          // Eighth note
-          const eighthNote = document.createElement('div');
-          eighthNote.className = 'note';
-          
-          const eighthHead = document.createElement('div');
-          eighthHead.className = 'note-head';
-          
-          const eighthStem = document.createElement('div');
-          eighthStem.className = 'note-stem';
-          
-          const eighthFlag = document.createElement('div');
-          eighthFlag.className = 'note-flag';
-          
-          eighthNote.appendChild(eighthHead);
-          eighthNote.appendChild(eighthStem);
-          eighthNote.appendChild(eighthFlag);
-          container.appendChild(eighthNote);
-          break;
-          
-        case 3:
-          // Eighth note triplet (three eighth notes with bracket)
-          for (let i = 0; i < 3; i++) {
-            const tripletNote = document.createElement('div');
-            tripletNote.className = 'note';
-            tripletNote.style.transform = 'scale(0.8)';
-            
-            const tripletHead = document.createElement('div');
-            tripletHead.className = 'note-head';
-            
-            const tripletStem = document.createElement('div');
-            tripletStem.className = 'note-stem';
-            
-            const tripletFlag = document.createElement('div');
-            tripletFlag.className = 'note-flag';
-            
-            tripletNote.appendChild(tripletHead);
-            tripletNote.appendChild(tripletStem);
-            tripletNote.appendChild(tripletFlag);
-            container.appendChild(tripletNote);
-          }
-          
-          const bracket = document.createElement('div');
-          bracket.className = 'triplet-bracket';
-          container.appendChild(bracket);
-          break;
-          
-        case 4:
-          // Sixteenth note (with double flag)
-          const sixteenthNote = document.createElement('div');
-          sixteenthNote.className = 'note';
-          
-          const sixteenthHead = document.createElement('div');
-          sixteenthHead.className = 'note-head';
-          
-          const sixteenthStem = document.createElement('div');
-          sixteenthStem.className = 'note-stem';
-          
-          const sixteenthFlag1 = document.createElement('div');
-          sixteenthFlag1.className = 'note-flag';
-          
-          const sixteenthFlag2 = document.createElement('div');
-          sixteenthFlag2.className = 'note-flag';
-          sixteenthFlag2.style.top = '8px';
-          
-          sixteenthNote.appendChild(sixteenthHead);
-          sixteenthNote.appendChild(sixteenthStem);
-          sixteenthNote.appendChild(sixteenthFlag1);
-          sixteenthNote.appendChild(sixteenthFlag2);
-          container.appendChild(sixteenthNote);
-          break;
-      }
-    }
-    
-    // Create visual beat indicators based on time signature
-    function updateBeatDots() {
-      const container = document.getElementById('beatDots');
-      container.innerHTML = '';
-      const [numerator, denominator] = timeSignature.split('/').map(Number);
-      
-      for (let i = 0; i < numerator; i++) {
-        const dot = document.createElement('div');
-        dot.classList.add('dot');
-        // Mark the first beat as an accent
-        if (i === 0) {
-          dot.classList.add('accent');
-        }
-        container.appendChild(dot);
-      }
-    }
-    
-    // Highlight the current beat dot
-    function highlightDot(index) {
-      const dots = document.querySelectorAll('.dot');
-      dots.forEach((dot, i) => {
-        dot.classList.toggle('active', i === index);
-      });
-    }
-    
-    // Change BPM value
-    function changeBpm(delta) {
-      bpm = Math.max(30, Math.min(300, bpm + delta));
-      bpmSlider.value = bpm;
-      bpmInput.value = bpm;
-      document.getElementById("bpmDisplay").textContent = `${bpm}`;
-      if (role === 'host') {
-        updateSettings();
-      }
-    }
-    
-    // Debounce function for slider changes
-    let updateTimeout = null;
-    function debounceUpdateSettings() {
-      clearTimeout(updateTimeout);
-      updateTimeout = setTimeout(updateSettings, 300);
-    }
-    
-    // Synchronize time with server
-    async function syncTime() {
-      const samples = [];
-      let latencySum = 0;
-      
-      document.getElementById('latencyDisplay').textContent = 'Syncing with server...';
-      
-      try {
-        for (let i = 0; i < 8; i++) {
-          const t0 = performance.now();
-          const res = await fetch('/time');
-          const t1 = performance.now();
-          const json = await res.json();
-          
-          const roundTrip = t1 - t0;
-          latencySum += roundTrip;
-          
-          // Estimate one-way latency as half of round trip
-          const serverTime = json.serverTime + (roundTrip / 2);
-          const offset = serverTime - Date.now();
-          samples.push(offset);
-          
-          // Small delay between samples
-          await new Promise(r => setTimeout(r, 50));
-        }
-        
-        // Sort and use median value for better accuracy
-        samples.sort((a, b) => a - b);
-        timeOffset = samples[Math.floor(samples.length / 2)];
-        
-        // Calculate average round-trip time
-        const avgLatency = Math.round(latencySum / 8);
-        document.getElementById('latencyDisplay').textContent = `Network latency: ~${avgLatency}ms`;
-        
-        return true;
-      } catch (error) {
-        console.error('Failed to sync time:', error);
-        document.getElementById('latencyDisplay').textContent = 'Time sync failed. Please refresh.';
-        return false;
-      }
-    }
-    
-    // Get server-adjusted current time
-    function globalNow() {
-      return Date.now() + timeOffset;
-    }
-    
-    // Schedule a metronome click sound
-    function scheduleClick(time, isAccent = false) {
-      // Percussive noise burst (accent is louder and longer)
-      const noiseLength = isAccent ? 0.08 : 0.05;
-      const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate * noiseLength, audioCtx.sampleRate);
-      const data = buffer.getChannelData(0);
-      for (let i = 0; i < data.length; i++) {
-        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (isAccent ? 140 : 200)); // slower decay for accent
-      }
-      const noise = audioCtx.createBufferSource();
-      noise.buffer = buffer;
-    
-      const gain = audioCtx.createGain();
-      gain.gain.setValueAtTime(isAccent ? 2.0 : 1.0, time);  // Accent much louder
-      gain.gain.linearRampToValueAtTime(0.001, time + noiseLength);
-    
-      noise.connect(gain).connect(audioCtx.destination);
-      noise.start(time);
-    
-      // Oscillator (accent: higher pitch & different timbre)
-      const osc = audioCtx.createOscillator();
-      const oscGain = audioCtx.createGain();
-      osc.type = isAccent ? 'square' : 'triangle';  // Sawtooth is bright, stands out
-      osc.frequency.setValueAtTime(isAccent ? 1500 : 1000, time); // Higher accent pitch
-      oscGain.gain.setValueAtTime(isAccent ? 10.0 : 5.0, time); // above 1.0 is amplification.
-      oscGain.gain.linearRampToValueAtTime(0.001, time + (isAccent ? 0.09 : 0.05));
-    
-      osc.connect(oscGain).connect(audioCtx.destination);
-      osc.start(time);
-      osc.stop(time + (isAccent ? 0.09 : 0.05));
-    }
-    
-    // Main metronome loop
-    function tickLoop() {
-      if (!isRunning) return;
-      
-      try {
-        const interval = (60 / bpm) / subdivision;
-        const now = audioCtx.currentTime;
-        const [numerator, denominator] = timeSignature.split('/').map(Number);
-        const ticksPerBar = numerator * subdivision;
-        
-        // Schedule clicks slightly ahead in time
-        while (nextTick < now + 0.2) {
-          const currentBeat = Math.floor(beatCount / subdivision);
-          const isFirstBeat = (beatCount % ticksPerBar === 0);
-          const isMainBeat = (beatCount % subdivision === 0);
-          
-          // Schedule sound
-          scheduleClick(nextTick, isFirstBeat);
-          
-          // Update visual beat indicator
-          if (isMainBeat) {
-            const visualBeat = currentBeat % numerator;
-            requestAnimationFrame(() => highlightDot(visualBeat));
-          }
-          
-          nextTick += interval;
-          beatCount++;
-        }
-        
-        tickTimer = requestAnimationFrame(tickLoop);
-      } catch (error) {
-        console.error('Error in tick loop:', error);
-        // Attempt to recover
-        if (isRunning) {
-          setTimeout(() => {
-            if (isRunning) {
-              tickTimer = requestAnimationFrame(tickLoop);
-            }
-          }, 1000);
-        }
-      }
-    }
-    
-    // Process sync message from server
-    function syncClock(data) {
-      if (syncing) return;
-      
-      // Update metronome parameters
-      bpm = data.bpm;
-      subdivision = data.subdivision || 1;
-      timeSignature = data.timeSignature || '4/4';
-      
-      // Update UI
-      bpmInput.value = bpm;
-      bpmSlider.value = bpm;
-      document.getElementById("bpmDisplay").textContent = `${bpm}`;
-      
-      // Update visual indicators
-      updateTimeSignatureVisual(timeSignature);
-      updateSubdivisionVisual(subdivision);
-      updateBeatDots();
-      
-      // Update running state
-      const wasRunning = isRunning;
-      isRunning = data.isRunning;
-      document.body.classList.toggle('playing', isRunning);
-      
-      // Update button states
-      if (role === 'host') {
-        startButton.disabled = isRunning;
-        stopButton.disabled = !isRunning;
-      }
-      
-      // Handle metronome stop
-      if (!isRunning && wasRunning) {
-        if (tickTimer) {
-          cancelAnimationFrame(tickTimer);
-          tickTimer = null;
-        }
-        document.querySelectorAll('.dot').forEach(dot => dot.classList.remove('active'));
-        return;
-      }
-      
-      // Start metronome if not already running
-      if (isRunning && data.startTime) {
-        startTime = data.startTime;
-        startMetronomeSync();
-      }
-    }
-    
-    // Start metronome playback in sync with server time
-    function startMetronomeSync() {
-      syncing = true;
-      
-      try {
-        // Update beat visualization
-        beatCount = 0;
-        updateBeatDots();
-        
-        // Ensure audio is ready
-        audioCtx.resume().then(() => {
-          const now = globalNow();
-          const intervalMs = (60000 / bpm) / subdivision;
-          
-          // Calculate elapsed time and next tick
-          const elapsedMs = now - startTime;
-          const ticksSinceStart = Math.floor(elapsedMs / intervalMs);
-          const nextTickTimeMs = startTime + (ticksSinceStart + 1) * intervalMs;
-          
-          // Delay until next tick
-          const delayMs = nextTickTimeMs - now;
-          const clampedDelay = Math.max(0, Math.min(1000, delayMs));
-          
-          console.log(`Starting metronome sync: delay=${clampedDelay}ms, bpm=${bpm}`);
-          
-          // Schedule first tick
-          setTimeout(() => {
-            nextTick = audioCtx.currentTime;
-            beatCount = ticksSinceStart + 1;
-            tickLoop();
-            syncing = false;
-          }, clampedDelay);
-        }).catch(err => {
-          console.error('Audio context resume error:', err);
-          syncing = false;
-        });
-      } catch (error) {
-        console.error('Error starting metronome:', error);
-        syncing = false;
-      }
-    }
-    
-    // Socket event handlers
-    socket.on('sync', syncClock);
-    
-    socket.on('clientCount', (count) => {
-      const connectedCount = count - 1;
-      document.getElementById("statusDisplay").textContent = connectedCount === 1 
-        ? `1 client connected` 
-        : `${connectedCount} clients connected`;
-    });
-    
-    // Update metronome settings (host only)
-    function updateSettings() {
-      if (role !== 'host') return;
-      
-      const ts = document.getElementById("timeSigInput").value;
-      const subdiv = parseInt(document.getElementById("subdivisionInput").value);
-      
-      // Update visual indicators
-      updateTimeSignatureVisual(ts);
-      updateSubdivisionVisual(subdiv);
+  // Metronome state
+  let bpm = 120;
+  let isRunning = false;
+  let startTime = null;
+  let nextTick = 0;
+  let role = null;
+  let timeOffset = 0;
+  let tickTimer = null;
+  let subdivision = 1;
+  let timeSignature = '4/4';
+  let beatCount = 0;
+  let syncing = false;
+  let wakeLock = null;
 
-      updateBeatDots();
-      
-      socket.emit('updateSettings', {
-        bpm,
-        timeSignature: ts,
-        subdivision: subdiv
-      });
-    }
-    
-    // Update metronome settings automatically when controls change
-    document.getElementById("timeSigInput").addEventListener('change', function() {
-      updateTimeSignatureVisual(this.value);
-      updateSettings();
-    });
-    
-    document.getElementById("subdivisionInput").addEventListener('change', function() {
-      updateSubdivisionVisual(parseInt(this.value));
-      updateSettings();
-    });
-    
-    // Start metronome (host only)
-    function startMetronome() {
-      if (role !== 'host') return;
-      
+  // DOM Elements
+  const metronomeControls = document.getElementById('metronomeControls');
+  const roleChooser = document.getElementById('roleChooser');
+  const bpmControls = document.getElementById('bpmControls');
+  const bpmSlider = document.getElementById('bpmSlider');
+  const bpmInput = document.getElementById('bpmValue');
+  const startButton = document.getElementById('startButton');
+  const stopButton = document.getElementById('stopButton');
+  const clientVisuals = document.getElementById('clientVisuals');
+
+  // Enable audio context on user interaction
+  document.body.addEventListener('click', () => {
+    if (audioCtx.state === 'suspended') {
       audioCtx.resume();
-      startButton.disabled = true;
-      socket.emit('startMetronome');
     }
-    
-    // Stop metronome (host only)
-    function stopMetronome() {
-      if (role !== 'host') return;
-      
-      isRunning = false;
-      stopButton.disabled = true;
-      
+  });
+
+  // Update BPM value display when slider changes
+  bpmSlider.addEventListener('input', () => {
+    bpm = parseInt(bpmSlider.value);
+    bpmInput.value = bpm;
+    document.getElementById("bpmDisplay").textContent = `${bpm}`;
+    if (role === 'host') {
+      debounceUpdateSettings();
+      renderPresets();
+    }
+  });
+
+  // Handle direct BPM input changes
+  bpmInput.addEventListener('change', () => {
+    let newBpm = parseInt(bpmInput.value);
+    // Clamp BPM to valid range
+    newBpm = Math.max(30, Math.min(300, newBpm || 120));
+    bpm = newBpm;
+    bpmInput.value = bpm;
+    bpmSlider.value = bpm;
+    document.getElementById("bpmDisplay").textContent = `${bpm}`;
+    if (role === 'host') {
+      updateSettings();
+    }
+  });
+
+  async function requestWakeLock() {
+    try {
+      if ('wakeLock' in navigator) {
+        wakeLock = await navigator.wakeLock.request('screen');
+        wakeLock.addEventListener('release', () => {
+          console.log('Wake Lock was released');
+        });
+        console.log('Wake Lock is active');
+      }
+    } catch (err) {
+      console.error(`Wake Lock error: ${err.name}, ${err.message}`);
+    }
+  }
+
+  // Update time signature visual display
+  function updateTimeSignatureVisual(ts) {
+    const [numerator, denominator] = ts.split('/').map(Number);
+    const visual = document.getElementById('timeSignatureVisual');
+
+    const numeratorEl = visual.querySelector('.numerator');
+    const denominatorEl = visual.querySelector('.denominator');
+
+    numeratorEl.textContent = numerator;
+    denominatorEl.textContent = denominator;
+  }
+
+  // Update subdivision visual display
+  function updateSubdivisionVisual(subdiv) {
+    const container = document.getElementById('subdivisionVisual');
+    container.innerHTML = '';
+
+    switch (subdiv) {
+      case 1:
+        // Quarter note
+        const quarterNote = document.createElement('div');
+        quarterNote.className = 'note';
+
+        const quarterHead = document.createElement('div');
+        quarterHead.className = 'note-head';
+
+        const quarterStem = document.createElement('div');
+        quarterStem.className = 'note-stem';
+
+        quarterNote.appendChild(quarterHead);
+        quarterNote.appendChild(quarterStem);
+        container.appendChild(quarterNote);
+        break;
+
+      case 2:
+        // Eighth note
+        const eighthNote = document.createElement('div');
+        eighthNote.className = 'note';
+
+        const eighthHead = document.createElement('div');
+        eighthHead.className = 'note-head';
+
+        const eighthStem = document.createElement('div');
+        eighthStem.className = 'note-stem';
+
+        const eighthFlag = document.createElement('div');
+        eighthFlag.className = 'note-flag';
+
+        eighthNote.appendChild(eighthHead);
+        eighthNote.appendChild(eighthStem);
+        eighthNote.appendChild(eighthFlag);
+        container.appendChild(eighthNote);
+        break;
+
+      case 3:
+        // Eighth note triplet (three eighth notes with bracket)
+        for (let i = 0; i < 3; i++) {
+          const tripletNote = document.createElement('div');
+          tripletNote.className = 'note';
+          tripletNote.style.transform = 'scale(0.8)';
+
+          const tripletHead = document.createElement('div');
+          tripletHead.className = 'note-head';
+
+          const tripletStem = document.createElement('div');
+          tripletStem.className = 'note-stem';
+
+          const tripletFlag = document.createElement('div');
+          tripletFlag.className = 'note-flag';
+
+          tripletNote.appendChild(tripletHead);
+          tripletNote.appendChild(tripletStem);
+          tripletNote.appendChild(tripletFlag);
+          container.appendChild(tripletNote);
+        }
+
+        const bracket = document.createElement('div');
+        bracket.className = 'triplet-bracket';
+        container.appendChild(bracket);
+        break;
+
+      case 4:
+        // Sixteenth note (with double flag)
+        const sixteenthNote = document.createElement('div');
+        sixteenthNote.className = 'note';
+
+        const sixteenthHead = document.createElement('div');
+        sixteenthHead.className = 'note-head';
+
+        const sixteenthStem = document.createElement('div');
+        sixteenthStem.className = 'note-stem';
+
+        const sixteenthFlag1 = document.createElement('div');
+        sixteenthFlag1.className = 'note-flag';
+
+        const sixteenthFlag2 = document.createElement('div');
+        sixteenthFlag2.className = 'note-flag';
+        sixteenthFlag2.style.top = '8px';
+
+        sixteenthNote.appendChild(sixteenthHead);
+        sixteenthNote.appendChild(sixteenthStem);
+        sixteenthNote.appendChild(sixteenthFlag1);
+        sixteenthNote.appendChild(sixteenthFlag2);
+        container.appendChild(sixteenthNote);
+        break;
+    }
+  }
+
+  // Create visual beat indicators based on time signature
+  function updateBeatDots() {
+    const container = document.getElementById('beatDots');
+    container.innerHTML = '';
+    const [numerator, denominator] = timeSignature.split('/').map(Number);
+
+    for (let i = 0; i < numerator; i++) {
+      const dot = document.createElement('div');
+      dot.classList.add('dot');
+      // Mark the first beat as an accent
+      if (i === 0) {
+        dot.classList.add('accent');
+      }
+      container.appendChild(dot);
+    }
+  }
+
+  // Highlight the current beat dot
+  function highlightDot(index) {
+    const dots = document.querySelectorAll('.dot');
+    dots.forEach((dot, i) => {
+      dot.classList.toggle('active', i === index);
+    });
+  }
+
+  // Change BPM value
+  function changeBpm(delta) {
+    bpm = Math.max(30, Math.min(300, bpm + delta));
+    bpmSlider.value = bpm;
+    bpmInput.value = bpm;
+    document.getElementById("bpmDisplay").textContent = `${bpm}`;
+    if (role === 'host') {
+      updateSettings();
+    }
+  }
+
+  // Debounce function for slider changes
+  let updateTimeout = null;
+  function debounceUpdateSettings() {
+    clearTimeout(updateTimeout);
+    updateTimeout = setTimeout(updateSettings, 300);
+  }
+
+  // Synchronize time with server
+  async function syncTime() {
+    const samples = [];
+    let latencySum = 0;
+
+    document.getElementById('latencyDisplay').textContent = 'Syncing with server...';
+
+    try {
+      for (let i = 0; i < 8; i++) {
+        const t0 = performance.now();
+        const res = await fetch('/time');
+        const t1 = performance.now();
+        const json = await res.json();
+
+        const roundTrip = t1 - t0;
+        latencySum += roundTrip;
+
+        // Estimate one-way latency as half of round trip
+        const serverTime = json.serverTime + (roundTrip / 2);
+        const offset = serverTime - Date.now();
+        samples.push(offset);
+
+        // Small delay between samples
+        await new Promise(r => setTimeout(r, 50));
+      }
+
+      // Sort and use median value for better accuracy
+      samples.sort((a, b) => a - b);
+      timeOffset = samples[Math.floor(samples.length / 2)];
+
+      // Calculate average round-trip time
+      const avgLatency = Math.round(latencySum / 8);
+      document.getElementById('latencyDisplay').textContent = `Network latency: ~${avgLatency}ms`;
+
+      return true;
+    } catch (error) {
+      console.error('Failed to sync time:', error);
+      document.getElementById('latencyDisplay').textContent = 'Time sync failed. Please refresh.';
+      return false;
+    }
+  }
+
+  // Get server-adjusted current time
+  function globalNow() {
+    return Date.now() + timeOffset;
+  }
+
+  // Schedule a metronome click sound
+  function scheduleClick(time, isAccent = false) {
+    // Percussive noise burst (accent is louder and longer)
+    const noiseLength = isAccent ? 0.08 : 0.05;
+    const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate * noiseLength, audioCtx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (isAccent ? 140 : 200)); // slower decay for accent
+    }
+    const noise = audioCtx.createBufferSource();
+    noise.buffer = buffer;
+
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(isAccent ? 2.0 : 1.0, time);  // Accent much louder
+    gain.gain.linearRampToValueAtTime(0.001, time + noiseLength);
+
+    noise.connect(gain).connect(audioCtx.destination);
+    noise.start(time);
+
+    // Oscillator (accent: higher pitch & different timbre)
+    const osc = audioCtx.createOscillator();
+    const oscGain = audioCtx.createGain();
+    osc.type = isAccent ? 'square' : 'triangle';  // Sawtooth is bright, stands out
+    osc.frequency.setValueAtTime(isAccent ? 1500 : 1000, time); // Higher accent pitch
+    oscGain.gain.setValueAtTime(isAccent ? 10.0 : 5.0, time); // above 1.0 is amplification.
+    oscGain.gain.linearRampToValueAtTime(0.001, time + (isAccent ? 0.09 : 0.05));
+
+    osc.connect(oscGain).connect(audioCtx.destination);
+    osc.start(time);
+    osc.stop(time + (isAccent ? 0.09 : 0.05));
+  }
+
+  // Main metronome loop
+  function tickLoop() {
+    if (!isRunning) return;
+
+    try {
+      const interval = (60 / bpm) / subdivision;
+      const now = audioCtx.currentTime;
+      const [numerator, denominator] = timeSignature.split('/').map(Number);
+      const ticksPerBar = numerator * subdivision;
+
+      // Schedule clicks slightly ahead in time
+      while (nextTick < now + 0.2) {
+        const currentBeat = Math.floor(beatCount / subdivision);
+        const isFirstBeat = (beatCount % ticksPerBar === 0);
+        const isMainBeat = (beatCount % subdivision === 0);
+
+        // Schedule sound
+        scheduleClick(nextTick, isFirstBeat);
+
+        // Update visual beat indicator
+        if (isMainBeat) {
+          const visualBeat = currentBeat % numerator;
+          requestAnimationFrame(() => highlightDot(visualBeat));
+        }
+
+        nextTick += interval;
+        beatCount++;
+      }
+
+      tickTimer = requestAnimationFrame(tickLoop);
+    } catch (error) {
+      console.error('Error in tick loop:', error);
+      // Attempt to recover
+      if (isRunning) {
+        setTimeout(() => {
+          if (isRunning) {
+            tickTimer = requestAnimationFrame(tickLoop);
+          }
+        }, 1000);
+      }
+    }
+  }
+
+  // Process sync message from server
+  function syncClock(data) {
+    if (syncing) return;
+
+    // Update metronome parameters
+    bpm = data.bpm;
+    subdivision = data.subdivision || 1;
+    timeSignature = data.timeSignature || '4/4';
+
+    // Update UI
+    bpmInput.value = bpm;
+    bpmSlider.value = bpm;
+    document.getElementById("bpmDisplay").textContent = `${bpm}`;
+
+    // Update visual indicators
+    updateTimeSignatureVisual(timeSignature);
+    updateSubdivisionVisual(subdivision);
+    updateBeatDots();
+
+    // Update running state
+    const wasRunning = isRunning;
+    isRunning = data.isRunning;
+    document.body.classList.toggle('playing', isRunning);
+
+    // Update button states
+    if (role === 'host') {
+      startButton.disabled = isRunning;
+      stopButton.disabled = !isRunning;
+    }
+
+    // Handle metronome stop
+    if (!isRunning && wasRunning) {
       if (tickTimer) {
         cancelAnimationFrame(tickTimer);
         tickTimer = null;
       }
-      
-      socket.emit('stopMetronome');
+      document.querySelectorAll('.dot').forEach(dot => dot.classList.remove('active'));
+      return;
     }
-    
-    // Set user role
-    function setRole(r) {
-      role = r;
 
-      requestWakeLock();
+    // Start metronome if not already running
+    if (isRunning && data.startTime) {
+      startTime = data.startTime;
+      startMetronomeSync();
+    }
+  }
 
-      // Hide role chooser and show controls
-      roleChooser.style.display = 'none';
-      metronomeControls.style.display = 'block';
+  // Start metronome playback in sync with server time
+  function startMetronomeSync() {
+    syncing = true;
 
-      // Show/hide appropriate elements based on role
-      const isHost = r === 'host';
-      document.getElementById("hostControls").style.display = isHost ? 'block' : 'none';
-      clientVisuals.style.display = isHost ? 'none' : 'flex';
-      document.getElementById("bpmDisplay").style.display = isHost ? 'none' : 'block';
-      document.getElementById("statusInfo").style.display = isHost ? 'none' : 'block';
-
-      // *** Add this line to show dots immediately ***
+    try {
+      // Update beat visualization
+      beatCount = 0;
       updateBeatDots();
 
-      // Initialize visual indicators
-      updateTimeSignatureVisual(timeSignature);
-      updateSubdivisionVisual(subdivision);
+      // Ensure audio is ready
+      audioCtx.resume().then(() => {
+        const now = globalNow();
+        const intervalMs = (60000 / bpm) / subdivision;
 
-      // Start time synchronization
-      syncTime().then((success) => {
-        if (success) {
-          socket.emit('identify', r);
-        }
+        // Calculate elapsed time and next tick
+        const elapsedMs = now - startTime;
+        const ticksSinceStart = Math.floor(elapsedMs / intervalMs);
+        const nextTickTimeMs = startTime + (ticksSinceStart + 1) * intervalMs;
+
+        // Delay until next tick
+        const delayMs = nextTickTimeMs - now;
+        const clampedDelay = Math.max(0, Math.min(1000, delayMs));
+
+        console.log(`Starting metronome sync: delay=${clampedDelay}ms, bpm=${bpm}`);
+
+        // Schedule first tick
+        setTimeout(() => {
+          nextTick = audioCtx.currentTime;
+          beatCount = ticksSinceStart + 1;
+          tickLoop();
+          syncing = false;
+        }, clampedDelay);
+      }).catch(err => {
+        console.error('Audio context resume error:', err);
+        syncing = false;
       });
+    } catch (error) {
+      console.error('Error starting metronome:', error);
+      syncing = false;
     }
-  </script>
+  }
+
+  // Socket event handlers
+  socket.on('sync', syncClock);
+
+  socket.on('clientCount', (count) => {
+    const connectedCount = count - 1;
+    document.getElementById("statusDisplay").textContent = connectedCount === 1
+      ? `1 client connected`
+      : `${connectedCount} clients connected`;
+  });
+
+  // Update metronome settings (host only)
+  function updateSettings() {
+    if (role !== 'host') return;
+
+    const ts = document.getElementById("timeSigInput").value;
+    const subdiv = parseInt(document.getElementById("subdivisionInput").value);
+
+    // Update visual indicators
+    updateTimeSignatureVisual(ts);
+    updateSubdivisionVisual(subdiv);
+
+    updateBeatDots();
+
+    socket.emit('updateSettings', {
+      bpm,
+      timeSignature: ts,
+      subdivision: subdiv
+    });
+  }
+
+  // Update metronome settings automatically when controls change
+  document.getElementById("timeSigInput").addEventListener('change', function () {
+    updateTimeSignatureVisual(this.value);
+    updateSettings();
+  });
+
+  document.getElementById("subdivisionInput").addEventListener('change', function () {
+    updateSubdivisionVisual(parseInt(this.value));
+    updateSettings();
+  });
+
+  // Start metronome (host only)
+  function startMetronome() {
+    if (role !== 'host') return;
+
+    audioCtx.resume();
+    startButton.disabled = true;
+    socket.emit('startMetronome');
+  }
+
+  // Stop metronome (host only)
+  function stopMetronome() {
+    if (role !== 'host') return;
+
+    isRunning = false;
+    stopButton.disabled = true;
+
+    if (tickTimer) {
+      cancelAnimationFrame(tickTimer);
+      tickTimer = null;
+    }
+
+    socket.emit('stopMetronome');
+  }
+
+  // Set user role
+  function setRole(r) {
+    role = r;
+
+    requestWakeLock();
+
+    // Hide role chooser and show controls
+    roleChooser.style.display = 'none';
+    metronomeControls.style.display = 'block';
+
+    // Show/hide appropriate elements based on role
+    const isHost = r === 'host';
+    document.getElementById("hostControls").style.display = isHost ? 'block' : 'none';
+    clientVisuals.style.display = isHost ? 'none' : 'flex';
+    document.getElementById("bpmDisplay").style.display = isHost ? 'none' : 'block';
+    document.getElementById("statusInfo").style.display = isHost ? 'none' : 'block';
+
+    // *** Add this line to show dots immediately ***
+    updateBeatDots();
+
+    // Initialize visual indicators
+    updateTimeSignatureVisual(timeSignature);
+    updateSubdivisionVisual(subdivision);
+
+    // Start time synchronization
+    syncTime().then((success) => {
+      if (success) {
+        socket.emit('identify', r);
+      }
+    });
+  }
+
+  function getPresets() {
+    return JSON.parse(localStorage.getItem('metronomePresets') || '[]');
+  }
+
+  function savePreset(preset) {
+    const presets = getPresets();
+    presets.push(preset);
+    localStorage.setItem('metronomePresets', JSON.stringify(presets));
+  }
+
+  function deletePreset(index) {
+    const presets = getPresets();
+    presets.splice(index, 1);
+    localStorage.setItem('metronomePresets', JSON.stringify(presets));
+  }
+
+  function handleSavePreset() {
+    const ts = document.getElementById("timeSigInput").value;
+    const subdiv = parseInt(document.getElementById("subdivisionInput").value);
+    // Auto-generate a descriptive name
+    const name = `${bpm} BPM, ${ts}, Sub: ${subdiv}`;
+    const preset = {
+      name,
+      bpm,
+      timeSignature: ts,
+      subdivision: subdiv,
+    };
+    savePreset(preset);
+    renderPresets();
+  }
+
+  function handleLoadPreset(idx) {
+    const preset = getPresets()[idx];
+    if (preset) {
+      bpm = preset.bpm;
+      document.getElementById("bpmSlider").value = bpm;
+      document.getElementById("bpmValue").value = bpm;
+      document.getElementById("bpmDisplay").textContent = `${bpm}`;
+      document.getElementById("timeSigInput").value = preset.timeSignature;
+      document.getElementById("subdivisionInput").value = preset.subdivision;
+      updateTimeSignatureVisual(preset.timeSignature);
+      updateSubdivisionVisual(preset.subdivision);
+      updateSettings(); // propagate to clients
+    }
+  }
+
+  function handleDeletePreset(idx) {
+    deletePreset(idx);
+    renderPresets();
+  }
+
+  function renderPresets() {
+    const list = document.getElementById('presetList');
+    list.innerHTML = '';
+    const presets = getPresets();
+    presets.forEach((preset, i) => {
+      const li = document.createElement('li');
+      li.innerHTML = `
+      <span style="flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+        ${preset.bpm} BPM ${preset.timeSignature}, ${subdivisionToText(preset.subdivision)}
+      </span>
+      <button class="preset-btn" onclick="handleLoadPreset(${i})">load</button>
+      <button class="preset-btn" onclick="handleDeletePreset(${i})">delete</button>
+    `;
+      list.appendChild(li);
+    });
+  }
+
+  function subdivisionToText(subdivision) {
+    switch (subdivision) {
+      case 1: return 'quarter';
+      case 2: return 'eighth';
+      case 3: return 'triplet';
+      case 4: return 'sixteenth';
+      default: return 'custom';
+    }
+  }
+</script>
+
 </html>
