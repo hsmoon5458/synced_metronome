@@ -91,6 +91,8 @@
 </body>
 
 <script src="/socket.io/socket.io.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/nosleep/0.12.0/NoSleep.min.js"></script>
+
 <script>
   const socket = io();
   const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -107,7 +109,6 @@
   let timeSignature = '4/4';
   let beatCount = 0;
   let syncing = false;
-  let wakeLock = null;
 
   // DOM Elements
   const metronomeControls = document.getElementById('metronomeControls');
@@ -118,6 +119,7 @@
   const startButton = document.getElementById('startButton');
   const stopButton = document.getElementById('stopButton');
   const clientVisuals = document.getElementById('clientVisuals');
+  const noSleep = new NoSleep();
 
   // Slider fill logic
   function updateSliderFill(slider) {
@@ -169,19 +171,24 @@
     }
   });
 
-  async function requestWakeLock() {
-    try {
-      if ('wakeLock' in navigator) {
-        wakeLock = await navigator.wakeLock.request('screen');
-        wakeLock.addEventListener('release', () => {
-          console.log('Wake Lock was released');
-        });
-        console.log('Wake Lock is active');
-      }
-    } catch (err) {
-      console.error(`Wake Lock error: ${err.name}, ${err.message}`);
-    }
+function enableWakeLockAndAudio() {
+  console.log("enableWakeLockAndAudio called. AudioContext state:", audioCtx.state, "NoSleep enabled:", noSleep.isEnabled);
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume().then(() => {
+      console.log("AudioContext resumed.");
+    }).catch(e => console.error("AudioContext resume error:", e));
   }
+  // This is the key part for NoSleep:
+  if (!noSleep.isEnabled) {
+    noSleep.enable().then(() => {
+      console.log("Screen wake lock is active."); // You should see this in your console
+    }).catch(e => console.error("Failed to enable screen wake lock:", e));
+  }
+  document.body.removeEventListener('click', enableWakeLockAndAudio);
+  document.body.removeEventListener('touchstart', enableWakeLockAndAudio);
+}
+document.body.addEventListener('click', enableWakeLockAndAudio);
+document.body.addEventListener('touchstart', enableWakeLockAndAudio);
 
   // Update time signature visual display
   function updateTimeSignatureVisual(ts) {
@@ -496,6 +503,9 @@
     if (role !== 'host') return;
     audioCtx.resume();
     startButton.disabled = true;
+    if (!noSleep.isEnabled) { 
+      noSleep.enable().catch(err => console.error('Failed to enable NoSleep on metronome start:', err));
+    }
     socket.emit('startMetronome');
   }
 
@@ -512,7 +522,6 @@
 
   function setRole(r) {
     role = r;
-    requestWakeLock();
     roleChooser.style.display = 'none';
     metronomeControls.style.display = 'block';
     const isHost = r === 'host';
