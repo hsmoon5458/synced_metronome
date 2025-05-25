@@ -1,0 +1,537 @@
+:root {
+    --primary: #fff;
+    --primary-dark: #e0e0e0;
+    --accent: #ff9800;
+    --accent-light: #ffd180;
+    --bg-light: #121212;
+    --bg-card: #232323;
+    --shadow: 0 8px 32px 0 #000a;
+}
+
+body {
+    background: var(--bg-light);
+    color: var(--primary);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+    min-height: 100vh;
+    text-align: center;
+    transition: background 0.5s, color 0.5s;
+}
+
+body.playing {
+    background: #231709;
+}
+
+body.playing::before {
+    content: '';
+    position: fixed;
+    z-index: 0;
+    top: 50%;
+    left: 50%;
+    width: 170vw;
+    /* much bigger for a smoother round glow */
+    height: 170vw;
+    /* keep height and width same for circle on any device */
+    max-width: 170vh;
+    max-height: 170vh;
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: radial-gradient(circle, #ff980033 0%, #ff980011 60%, transparent 85%);
+    animation: aura-pulse 2.8s ease-in-out infinite alternate;
+    opacity: 0.95;
+    filter: blur(10px);
+}
+
+@keyframes aura-pulse {
+    0% {
+        opacity: 0.9;
+        filter: blur(10px);
+    }
+
+    50% {
+        opacity: 1;
+        filter: blur(25px);
+    }
+
+    100% {
+        opacity: 0.92;
+        filter: blur(12px);
+    }
+}
+
+/* Keep everything above the glow */
+body>* {
+    position: relative;
+    z-index: 1;
+}
+
+.card {
+    background: var(--bg-card);
+    border-radius: 1.5rem;
+    padding: 2rem 1.5rem;
+    margin: 1.5rem auto;
+    max-width: 600px;
+    box-shadow: var(--shadow);
+    border: 1.5px solid #222;
+    transition: background 0.5s, box-shadow 0.5s;
+}
+
+body.playing .card {
+    background: #251c0a;
+    animation: card-glow 2.6s ease-in-out infinite alternate;
+    box-shadow: 0 0 60px 10px #ff980066, var(--shadow);
+}
+
+@keyframes card-glow {
+    0% {
+        box-shadow: 0 0 30px 3px #ff980022, var(--shadow);
+    }
+
+    60% {
+        box-shadow: 0 0 100px 10px #ffd18044, var(--shadow);
+    }
+
+    100% {
+        box-shadow: 0 0 120px 16px #ff980099, var(--shadow);
+    }
+}
+
+h1 {
+    margin-bottom: 1.5rem;
+    font-size: 2.5rem;
+    font-weight: 900;
+    color: var(--primary);
+    letter-spacing: -1px;
+    text-shadow: 0 2px 14px #ff980040, 0 1px 1px #000a;
+}
+
+/* BPM Controls */
+.bpm-controls {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.6rem;
+    margin-top: 0.5rem;
+}
+
+.bpm-buttons {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+}
+
+.bpm-buttons button {
+    font-size: 1.5rem;
+    width: 3.2rem;
+    height: 3.2rem;
+    padding: 0;
+    border-radius: 50%;
+    background: #171717;
+    color: var(--accent);
+    box-shadow: 0 2px 8px #0008;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+
+.bpm-buttons button:hover {
+    background: var(--accent);
+    color: #181818;
+}
+
+#bpmValue {
+    font-size: 1.5rem;
+    width: 4rem;
+    text-align: center;
+    padding: 0.5rem;
+    border: 2px solid #333;
+    border-radius: 0.5rem;
+    background: #181818;
+    color: var(--primary);
+}
+
+#bpmDisplay {
+    font-size: 3.5rem;
+    font-weight: 700;
+    color: var(--primary);
+    margin: 0.5rem 0;
+    text-shadow: 0 2px 8px #ff980040, 0 1px 0 #111;
+}
+
+/* Custom Range Slider Styling */
+input[type="range"] {
+    width: 250px;
+    height: 8px;
+    border-radius: 5px;
+    appearance: none;
+    outline: none;
+    background: linear-gradient(to right,
+            var(--accent) 0%,
+            var(--accent) var(--val, 0%),
+            #292929 var(--val, 0%),
+            #292929 100%);
+    transition: background 0.15s;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid #fff3;
+    box-shadow: 0 1px 6px #ff980044;
+    cursor: pointer;
+}
+
+input[type="range"]:focus::-webkit-slider-thumb {
+    background: #ffd180;
+}
+
+input[type="range"]::-moz-range-thumb {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--accent);
+}
+
+input[type="range"]:focus::-moz-range-thumb {
+    background: #ffd180;
+}
+
+/* End Custom Slider */
+
+/* Beat Dots */
+.beat-indicators {
+    display: flex;
+    justify-content: center;
+    gap: 2rem;
+    margin: 2.3rem auto 1.5rem;
+}
+
+.dot {
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: 50%;
+    background: #232323;
+    box-shadow: 0 0 1rem #ff980013, 0 0.2rem 0.5rem #000a;
+    border: 2px solid #232323;
+    transition: background 0.14s, box-shadow 0.15s, transform 0.15s, border-color 0.14s;
+}
+
+.dot.active {
+    background: radial-gradient(circle at 30% 30%, #ff9800 0%, #ff6f00 100%);
+    box-shadow: 0 0 30px #ff980099, 0 0 70px #ff980022;
+    border: 2.2px solid var(--accent);
+    transform: scale(1.16);
+}
+
+.dot.accent {
+    border: 3px solid var(--accent);
+}
+
+.dot.accent.active {
+    background: radial-gradient(circle at 30% 30%, #ffd180 0%, #ff9800 100%);
+    box-shadow: 0 0 36px #ffd180a0, 0 0 50px #ff980055;
+    border: 3px solid #fff;
+}
+
+/* Buttons */
+button {
+    padding: 0.8rem 1.7rem;
+    font-size: 1rem;
+    margin: 0.3rem;
+    border: none;
+    border-radius: 1.5rem;
+    background: #222;
+    color: var(--accent);
+    cursor: pointer;
+    box-shadow: 0 4px 10px #0003;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    transition: background 0.16s, color 0.15s, box-shadow 0.16s, transform 0.13s;
+}
+
+button:hover {
+    background: var(--accent);
+    color: #181818;
+    transform: translateY(-1.5px) scale(1.04);
+    box-shadow: 0 6px 18px #ff98004c;
+}
+
+button:focus,
+button:active {
+    outline: none;
+    box-shadow: 0 0 0 2px #ff980044;
+}
+
+button:focus:not(:hover),
+button:active:not(:hover) {
+    background: #232323;
+    color: var(--accent);
+    box-shadow: none;
+}
+
+button:disabled {
+    background: #2d2d2d;
+    color: #555;
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* Stop Button -- only orange when actually playing! */
+button.stop {
+    background: #222;
+    color: var(--accent);
+    box-shadow: 0 4px 12px #ff980033;
+}
+
+body.playing button.stop {
+    background: var(--accent);
+    color: #181818;
+}
+
+button.stop:hover {
+    background: #ffa726;
+    color: #181818;
+}
+
+/* Preset Bank */
+#presetBank {
+    margin-top: 1.5em;
+}
+
+#presetList {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+#presetList button.preset-btn {
+    border: none;
+    background: none;
+    font-size: 0.85em;
+    color: var(--accent);
+    padding: 2px 0;
+    margin-left: 0.3em;
+    border-radius: 4px;
+    cursor: pointer;
+    opacity: 0.9;
+    min-width: 46px;
+    text-align: center;
+    display: inline-block;
+    transition: background 0.16s, color 0.16s, opacity 0.17s;
+}
+
+#presetList button.preset-btn:hover {
+    background: #222;
+    color: var(--accent-light);
+    opacity: 1;
+}
+
+#presetList li {
+    display: flex;
+    align-items: center;
+    font-size: 0.97em;
+    margin: 0.18em 0;
+    padding: 0.1em 0.18em;
+    background: #171717;
+    border-radius: 7px;
+    border: 1px solid #232323;
+}
+
+/* Misc */
+.form-group {
+    margin-bottom: 0.8rem;
+}
+
+label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+    text-align: left;
+    color: var(--primary-dark);
+}
+
+select {
+    width: 100%;
+    padding: 0.7rem;
+    margin-bottom: 0.4rem;
+    border-radius: 0.7rem;
+    border: 2px solid #333;
+    background: #181818;
+    color: var(--primary);
+    font-size: 1.08rem;
+}
+
+.settings-grid {
+    display: grid;
+    gap: 0.8rem;
+}
+
+.button-group {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.9rem;
+    margin-top: 2rem;
+}
+
+.info-text {
+    font-size: 1.12rem;
+    font-weight: 500;
+    color: var(--accent);
+}
+
+#statusDisplay {
+    margin-top: 1.2rem;
+    font-size: 1rem;
+    opacity: 0.92;
+    color: #ffa726cc;
+}
+
+#latencyDisplay {
+    font-size: 0.98rem;
+    margin-top: 0.6rem;
+    color: #ffd180;
+}
+
+/* Visual indicators for time signature and subdivision */
+.visual-indicators {
+    display: flex;
+    justify-content: center;
+    gap: 2rem;
+    margin: 1.5rem auto;
+}
+
+.visual-indicator {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.time-sig-visual {
+    position: relative;
+    width: 44px;
+    height: 60px;
+    margin-bottom: 0.5rem;
+    background: #161616;
+    border-radius: 0.5rem;
+    box-shadow: 0 1px 6px #0006;
+}
+
+.time-sig-visual .numerator,
+.time-sig-visual .denominator {
+    position: absolute;
+    width: 100%;
+    text-align: center;
+    font-size: 1.7rem;
+    font-weight: bold;
+    color: var(--primary);
+}
+
+.time-sig-visual .numerator {
+    top: 0;
+}
+
+.time-sig-visual .denominator {
+    bottom: 0;
+}
+
+.time-sig-visual .divider {
+    position: absolute;
+    width: 100%;
+    height: 2px;
+    background-color: var(--accent);
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+.subdiv-visual {
+    display: flex;
+    justify-content: center;
+    gap: 3px;
+}
+
+.note {
+    width: 13px;
+    height: 30px;
+    position: relative;
+}
+
+.note-head {
+    width: 11px;
+    height: 11px;
+    background: var(--accent);
+    border-radius: 50%;
+    position: absolute;
+    bottom: 0;
+}
+
+.note-stem {
+    width: 2px;
+    height: 30px;
+    background: var(--primary);
+    position: absolute;
+    bottom: 0;
+    right: 0;
+}
+
+.note-flag {
+    width: 9px;
+    height: 11px;
+    background: var(--accent);
+    position: absolute;
+    top: 0;
+    right: 0;
+    border-radius: 0 0 9px 0;
+}
+
+.triplet-bracket {
+    width: 44px;
+    height: 11px;
+    border-top: 2px solid var(--accent);
+    border-left: 2px solid var(--accent);
+    border-right: 2px solid var(--accent);
+    position: relative;
+    margin-top: 5px;
+}
+
+.triplet-bracket::after {
+    content: "3";
+    position: absolute;
+    top: -15px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 13px;
+    font-weight: bold;
+    color: var(--accent);
+}
+
+@media (max-width: 480px) {
+    .beat-indicators {
+        gap: 0.7rem;
+    }
+
+    .dot {
+        width: 2.1rem;
+        height: 2.1rem;
+    }
+
+    #bpmDisplay {
+        font-size: 2.2rem;
+    }
+
+    h1 {
+        font-size: 2.0rem;
+        font-weight: 600;
+    }
+
+    .visual-indicators {
+        gap: 0.6rem;
+    }
+}
