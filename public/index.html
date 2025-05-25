@@ -452,6 +452,7 @@
     let timeSignature = '4/4';
     let beatCount = 0;
     let syncing = false;
+    let wakeLock = null;
     
     // DOM Elements
     const metronomeControls = document.getElementById('metronomeControls');
@@ -494,6 +495,20 @@
       }
     });
     
+    async function requestWakeLock() {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLock = await navigator.wakeLock.request('screen');
+          wakeLock.addEventListener('release', () => {
+            console.log('Wake Lock was released');
+          });
+          console.log('Wake Lock is active');
+        }
+      } catch (err) {
+        console.error(`Wake Lock error: ${err.name}, ${err.message}`);
+      }
+    }
+
     // Update time signature visual display
     function updateTimeSignatureVisual(ts) {
       const [numerator, denominator] = ts.split('/').map(Number);
@@ -715,7 +730,7 @@
       const osc = audioCtx.createOscillator();
       const oscGain = audioCtx.createGain();
       osc.type = isAccent ? 'square' : 'triangle';  // Sawtooth is bright, stands out
-      osc.frequency.setValueAtTime(isAccent ? 1700 : 1000, time); // Higher accent pitch
+      osc.frequency.setValueAtTime(isAccent ? 1500 : 1000, time); // Higher accent pitch
       oscGain.gain.setValueAtTime(isAccent ? 10.0 : 5.0, time); // above 1.0 is amplification.
       oscGain.gain.linearRampToValueAtTime(0.001, time + (isAccent ? 0.09 : 0.05));
     
@@ -808,7 +823,7 @@
       }
       
       // Start metronome if not already running
-      if (isRunning && data.startTime && (!wasRunning || startTime !== data.startTime)) {
+      if (isRunning && data.startTime) {
         startTime = data.startTime;
         startMetronomeSync();
       }
@@ -924,6 +939,8 @@
     // Set user role
     function setRole(r) {
       role = r;
+
+      requestWakeLock();
 
       // Hide role chooser and show controls
       roleChooser.style.display = 'none';
