@@ -87,10 +87,16 @@ io.on('connection', (socket) => {
       metronomeState.timeSignature = validatedTimeSignature;
       metronomeState.subdivision = validatedSubdivision;
       
+      // If a new startTime is provided (e.g. for re-syncing on BPM change), update it
+      if (settings.startTime) {
+        metronomeState.startTime = settings.startTime;
+      }
+
       console.log('Settings updated by host:', {
         bpm: validatedBpm,
         timeSignature: validatedTimeSignature,
-        subdivision: validatedSubdivision
+        subdivision: validatedSubdivision,
+        startTime: metronomeState.startTime
       });
       
       // Broadcast updated settings to all clients
