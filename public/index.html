@@ -18,8 +18,8 @@
       <p>Host: Control the metronome</p>
       <p>Client: Follow host's metronome</p>
       <div class="button-group">
-        <button onclick="initApp('host')">Host</button>
-        <button onclick="initApp('client')">Client</button>
+        <button onclick="setRole('host')">Host</button>
+        <button onclick="setRole('client')">Client</button>
       </div>
     </div>
 
@@ -50,9 +50,9 @@
         <div class="form-group">
           <div class="bpm-controls" id="bpmControls" style="display: flex;">
             <div class="bpm-buttons">
-              <button onclick="adjustBpm(-1)">-</button>
+              <button onclick="changeBpm(-1)">-</button>
               <input id="bpmValue" value="120">
-              <button onclick="adjustBpm(1)">+</button>
+              <button onclick="changeBpm(1)">+</button>
             </div>
             <input type="range" id="bpmSlider" min="30" max="300" value="120">
           </div>
@@ -79,8 +79,8 @@
         </div>
       </div>
       <div class="button-group">
-        <button id="startButton" onclick="requestStart()">Start</button>
-        <button id="stopButton" class="stop" onclick="requestStop()" disabled>Stop</button>
+        <button id="startButton" onclick="startMetronome()">Start</button>
+        <button id="stopButton" class="stop" onclick="stopMetronome()" disabled>Stop</button>
       </div>
       <div id="presetBank">
         <h3>Preset Bank</h3>
@@ -95,440 +95,199 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/nosleep/0.12.0/NoSleep.min.js"></script>
 
 <script>
-  // --- Core Systems ---
   const socket = io();
   const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+  // Metronome state
+  let bpm = 120;
+  let isRunning = false;
+  let startTime = null;
+  let nextTick = 0;
+  let role = null;
+  let timeOffset = 0;
+  let tickTimer = null;
+  let subdivision = 1;
+  let timeSignature = '4/4';
+  let beatCount = 0;
+  let syncTimeout = null;
+
+  // DOM Elements
+  const metronomeControls = document.getElementById('metronomeControls');
+  const roleChooser = document.getElementById('roleChooser');
+  const bpmControls = document.getElementById('bpmControls');
+  const bpmSlider = document.getElementById('bpmSlider');
+  const bpmInput = document.getElementById('bpmValue');
+  const startButton = document.getElementById('startButton');
+  const stopButton = document.getElementById('stopButton');
+  const clientVisuals = document.getElementById('clientVisuals');
   const noSleep = new NoSleep();
 
-  // Constants
-  const LOOKAHEAD = 0.1; // Lookahead window (seconds)
-  const TICK_INTERVAL = 25; // Loop interval (ms)
-
-  // State
-  const state = {
-    role: null,
-    bpm: 120,
-    timeSignature: '4/4',
-    subdivision: 1,
-    isRunning: false,
-    startTime: null, // Network Time
-    nextBeatIndex: 0,
-  };
-
-  // --- Robust Time Sync ---
-  class SyncClock {
-    constructor() {
-      this.offset = 0; // NetworkTime = performance.now() + offset
-      this.latency = 0;
-    }
-
-    getNetworkTime() {
-      return performance.now() + this.offset;
-    }
-
-    networkToAudioTime(netTime) {
-      // Convert Network Time -> Performance Time -> AudioContext Time
-      const perfTime = netTime - this.offset;
-      const nowPerf = performance.now();
-      const nowAudio = audioCtx.currentTime;
-      // audioCtx.currentTime moves roughly 1:1 with performance.now
-      // We calculate the delta to map specific timestamp
-      return nowAudio + (perfTime - nowPerf) / 1000;
-    }
-
-    async sync() {
-      const samples = [];
-      const latencyDisplay = document.getElementById('latencyDisplay');
-      if (latencyDisplay) latencyDisplay.textContent = 'Syncing clock...';
-
-      for (let i = 0; i < 6; i++) {
-        const t0 = performance.now();
-        try {
-          const res = await fetch('/time');
-          const data = await res.json();
-          const t1 = performance.now();
-          const rtt = t1 - t0;
-          const serverTimeEst = data.serverTime + (rtt / 2);
-          const offset = serverTimeEst - t1;
-          samples.push({ offset, rtt });
-          await new Promise(r => setTimeout(r, 100)); // Pace requests
-        } catch (e) {
-          console.error("Sync failed", e);
-        }
-      }
-
-      if (samples.length > 0) {
-        // Sort by RTT, take best 3
-        samples.sort((a, b) => a.rtt - b.rtt);
-        const best = samples.slice(0, 3);
-        const avgOffset = best.reduce((a, b) => a + b.offset, 0) / best.length;
-        const avgLatency = best.reduce((a, b) => a + b.rtt, 0) / best.length;
-        
-        this.offset = avgOffset;
-        this.latency = avgLatency;
-        
-        if (latencyDisplay) latencyDisplay.textContent = `Latency: ${Math.round(this.latency)}ms`;
-        console.log(`Clock synced. Offset: ${Math.round(this.offset)}ms, Latency: ${Math.round(this.latency)}ms`);
-      }
-    }
-  }
-
-  const clock = new SyncClock();
-
-  // --- Metronome Engine ---
-  let engineTimer = null;
-
-  function scheduleNote(audioTime, isMeasureStart, isBeatStart) {
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-
-    if (isMeasureStart) {
-      osc.frequency.value = 1500; // High pitch for '1'
-      gain.gain.value = 1.0;
-    } else if (isBeatStart) {
-      osc.frequency.value = 1000; // Medium pitch for beats
-      gain.gain.value = 0.6;
-    } else {
-      osc.frequency.value = 800; // Low pitch for subdivisions
-      gain.gain.value = 0.2;
-    }
-
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-
-    osc.start(audioTime);
-    // Short envelope
-    gain.gain.setValueAtTime(gain.gain.value, audioTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, audioTime + 0.05);
-    osc.stop(audioTime + 0.05);
-  }
-
-  function tickLoop() {
-    if (!state.isRunning || state.startTime === null) return;
-
-    const nowAudio = audioCtx.currentTime;
-    const lookaheadEnd = nowAudio + LOOKAHEAD;
-
-    // Calculate interval (seconds per tick)
-    // BPM is usually Quarter Notes per Minute
-    // If subdivision is 1, interval = 60/BPM
-    // If subdivision is 2, interval = 30/BPM
-    const interval = (60 / state.bpm) / state.subdivision;
-
-    // Parse time signature
-    const [num, den] = state.timeSignature.split('/').map(Number);
-    const ticksPerBeat = state.subdivision;
-    const ticksPerMeasure = num * state.subdivision;
-
-    // Calculate target time for the next beat index
-    let targetNetTime = state.startTime + (state.nextBeatIndex * interval * 1000);
-    let targetAudioTime = clock.networkToAudioTime(targetNetTime);
-
-    while (targetAudioTime < lookaheadEnd) {
-      // Schedule only if it's in the future (or very recent past to avoid skipping)
-      if (targetAudioTime >= nowAudio - 0.05) {
-        const isMeasureStart = state.nextBeatIndex % ticksPerMeasure === 0;
-        const isBeatStart = state.nextBeatIndex % ticksPerBeat === 0;
-        
-        scheduleNote(targetAudioTime, isMeasureStart, isBeatStart);
-
-        // Schedule Visuals (using setTimeout to sync with audio time)
-        const delayMs = (targetAudioTime - audioCtx.currentTime) * 1000;
-        if (isBeatStart) {
-           const beatNumber = Math.floor((state.nextBeatIndex % ticksPerMeasure) / ticksPerBeat);
-           setTimeout(() => {
-             highlightDot(beatNumber);
-           }, Math.max(0, delayMs));
-        }
-      }
-
-      state.nextBeatIndex++;
-      targetNetTime = state.startTime + (state.nextBeatIndex * interval * 1000);
-      targetAudioTime = clock.networkToAudioTime(targetNetTime);
-    }
-
-    engineTimer = setTimeout(tickLoop, TICK_INTERVAL);
-  }
-
-  function startEngine() {
-    if (engineTimer) clearTimeout(engineTimer);
-    
-    // Calculate correct nextBeatIndex based on current time
-    const netNow = clock.getNetworkTime();
-    const intervalMs = (60000 / state.bpm) / state.subdivision;
-    
-    const elapsed = netNow - state.startTime;
-    
-    if (elapsed < 0) {
-      // Start is in the future
-      state.nextBeatIndex = 0;
-    } else {
-      // Catch up or join mid-stream
-      state.nextBeatIndex = Math.floor(elapsed / intervalMs) + 1;
-    }
-
-    tickLoop();
-  }
-
-  function stopEngine() {
-    if (engineTimer) clearTimeout(engineTimer);
-    engineTimer = null;
-    // Clear visuals
-    document.querySelectorAll('.dot').forEach(d => d.classList.remove('active'));
-  }
-
-  // --- UI Interaction & Setup ---
-
-  function initApp(role) {
-    state.role = role;
-    
-    // Initialize Audio Context (requires user gesture)
-    if (audioCtx.state === 'suspended') {
-      audioCtx.resume();
-    }
-    
-    // Enable NoSleep
-    if (!noSleep.isEnabled) {
-        noSleep.enable().catch(e => console.warn("NoSleep failed", e));
-    }
-
-    // UI Switch
-    document.getElementById('roleChooser').style.display = 'none';
-    document.getElementById('metronomeControls').style.display = 'block';
-    
-    if (role === 'host') {
-      document.getElementById('hostControls').style.display = 'block';
-      document.getElementById('clientVisuals').style.display = 'none';
-      document.getElementById('bpmDisplay').style.display = 'none';
-      document.getElementById('statusInfo').style.display = 'none';
-      renderPresets();
-    } else {
-      document.getElementById('hostControls').style.display = 'none';
-      document.getElementById('clientVisuals').style.display = 'flex';
-    }
-
-    // Initial Sync
-    clock.sync().then(() => {
-      socket.emit('identify', role);
-      // Start periodic re-sync
-      setInterval(() => clock.sync(), 30000);
-    });
-    
-    updateUI();
-  }
-
-  function updateUI() {
-    // Update controls based on state
-    document.getElementById('bpmValue').value = state.bpm;
-    document.getElementById('bpmSlider').value = state.bpm;
-    document.getElementById('bpmDisplay').textContent = state.bpm;
-    updateSliderFill(document.getElementById('bpmSlider'));
-    
-    document.getElementById('timeSigInput').value = state.timeSignature;
-    document.getElementById('subdivisionInput').value = state.subdivision;
-    
-    const startBtn = document.getElementById('startButton');
-    const stopBtn = document.getElementById('stopButton');
-    
-    if (state.role === 'host') {
-        startBtn.disabled = state.isRunning;
-        stopBtn.disabled = !state.isRunning;
-    }
-
-    // Update Visualizers
-    updateTimeSignatureVisual(state.timeSignature);
-    updateSubdivisionVisual(state.subdivision);
-    updateBeatDots();
-    
-    // Update Body class
-    document.body.classList.toggle('playing', state.isRunning);
-  }
-
-  // --- Socket Events ---
-
-  socket.on('sync', (data) => {
-    const wasRunning = state.isRunning;
-    const oldStartTime = state.startTime;
-    const oldBpm = state.bpm;
-
-    state.bpm = data.bpm;
-    state.timeSignature = data.timeSignature;
-    state.subdivision = data.subdivision;
-    state.isRunning = data.isRunning;
-    state.startTime = data.startTime;
-
-    updateUI();
-
-    // Handle Start/Stop/Update
-    if (state.isRunning) {
-      if (!wasRunning || state.startTime !== oldStartTime || state.bpm !== oldBpm) {
-        // Restart engine with new parameters
-        startEngine();
-      }
-    } else {
-      stopEngine();
-    }
-  });
-
-  socket.on('clientCount', (count) => {
-    const display = document.getElementById('statusDisplay');
-    if (display) display.textContent = `${count - 1} client(s) connected`;
-  });
-
-  // --- Host Actions ---
-
-  function requestStart() {
-    if (state.role !== 'host') return;
-    // Set start time to 1 second in future to ensure all clients receive it before it starts
-    const netNow = clock.getNetworkTime();
-    // Wait, server handles this in the original code? 
-    // No, we want to send a clean start. 
-    // Original server code sets startTime = Date.now() + 1000.
-    // We should rely on server to set startTime for 'startMetronome' event, 
-    // OR we set it here and use updateSettings?
-    // The existing server 'startMetronome' handler sets time. 
-    // Let's stick to that for simple start.
-    socket.emit('startMetronome');
-  }
-
-  function requestStop() {
-    socket.emit('stopMetronome');
-  }
-
-  function sendSettingsUpdate(restartGrid = false) {
-    if (state.role !== 'host') return;
-
-    let newStart = state.startTime;
-    
-    if (restartGrid && state.isRunning) {
-        // Calculate the exact time of the *next* beat to maintain continuity
-        const netNow = clock.getNetworkTime();
-        const intervalMs = (60000 / state.bpm) / state.subdivision;
-        
-        // We base continuity on the NEW bpm? Or OLD?
-        // Usually: Snap to the next beat of the current grid, then switch to new grid.
-        // But we are changing BPM, so grid changes.
-        // Simple approach: "Restart from NOW" (aligned to next immediate beat)
-        
-        // Calculate where the next beat IS in the CURRENT (old) settings?
-        // Wait, state.bpm is already updated locally by the input change? 
-        // No, we should capture old state before applying changes if we want precision.
-        // But for simplicity:
-        // Just restart grid from "Now + safety buffer".
-        // Or, better:
-        // Just let the server/clients handle the jump.
-        // But to fix the "drift" issue, we want to explicitly set a new Anchor.
-        
-        // Let's set startTime to NOW (adjusted)
-        newStart = netNow + 200; // 200ms buffer
-        // Ideally we align it musically, but for "super stable", resetting the anchor is safer.
-    }
-
-    socket.emit('updateSettings', {
-      bpm: state.bpm,
-      timeSignature: state.timeSignature,
-      subdivision: state.subdivision,
-      startTime: restartGrid ? newStart : state.startTime
-    });
-  }
-  
-  // Debounced Settings Update
-  let debounceTimer;
-  function requestUpdate(restart = false) {
-    if (state.role !== 'host') return;
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => sendSettingsUpdate(restart), 100); // Fast response
-  }
-
-  // --- Controls ---
-
-  function adjustBpm(delta) {
-    state.bpm = Math.max(30, Math.min(300, parseInt(state.bpm) + delta));
-    requestUpdate(true); // BPM change requires grid restart
-    updateUI();
-  }
-
-  document.getElementById('bpmSlider').addEventListener('input', (e) => {
-    state.bpm = parseInt(e.target.value);
-    updateUI();
-    // Don't restart grid on every slide event, only on settle? 
-    // Or restart constantly? Restarting constantly causes stutter.
-    // Better: Don't restart grid while sliding. Just update BPM value.
-    // Clients will speed up/slow down.
-    // BUT, this causes the "drift" issue I identified.
-    // Compromise: While sliding, just update BPM (drift accumulates).
-    // On 'change' (release), restart grid to fix drift.
-    requestUpdate(false); 
-  });
-
-  document.getElementById('bpmSlider').addEventListener('change', () => {
-      // Slider released
-      requestUpdate(true); // Re-anchor to fix any drift from sliding
-  });
-
-  document.getElementById('bpmValue').addEventListener('change', (e) => {
-    let val = parseInt(e.target.value);
-    state.bpm = Math.max(30, Math.min(300, val));
-    requestUpdate(true);
-    updateUI();
-  });
-
-  document.getElementById('timeSigInput').addEventListener('change', (e) => {
-    state.timeSignature = e.target.value;
-    requestUpdate(true);
-    updateUI();
-  });
-
-  document.getElementById('subdivisionInput').addEventListener('change', (e) => {
-    state.subdivision = parseInt(e.target.value);
-    requestUpdate(true);
-    updateUI();
-  });
-
-  // --- Visual Helpers (Preserved & Cleaned) ---
-
+  // Slider fill logic
   function updateSliderFill(slider) {
-    const min = slider.min || 0;
-    const max = slider.max || 100;
-    const val = slider.value;
+    const min = +slider.min || 0;
+    const max = +slider.max || 100;
+    const val = +slider.value;
     const percent = ((val - min) / (max - min)) * 100;
     slider.style.setProperty('--val', percent + '%');
   }
+  // Init and update slider fill on input/change
 
+  if (bpmSlider) {
+    updateSliderFill(bpmSlider);
+    bpmSlider.addEventListener('input', () => updateSliderFill(bpmSlider));
+    bpmSlider.addEventListener('change', () => updateSliderFill(bpmSlider));
+  }
+
+  // Enable audio context on user interaction
+  document.body.addEventListener('click', () => {
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+  });
+
+  // Update BPM value display when slider changes
+  bpmSlider.addEventListener('input', () => {
+    bpm = parseInt(bpmSlider.value);
+    bpmInput.value = bpm;
+    document.getElementById("bpmDisplay").textContent = `${bpm}`;
+    updateSliderFill(bpmSlider);
+    if (role === 'host') {
+      debounceUpdateSettings();
+      renderPresets();
+    }
+  });
+
+  // Handle direct BPM input changes
+  bpmInput.addEventListener('change', () => {
+    let newBpm = parseInt(bpmInput.value);
+    // Clamp BPM to valid range
+    newBpm = Math.max(30, Math.min(300, newBpm || 120));
+    bpm = newBpm;
+    bpmInput.value = bpm;
+    bpmSlider.value = bpm;
+    updateSliderFill(bpmSlider);
+    document.getElementById("bpmDisplay").textContent = `${bpm}`;
+    if (role === 'host') {
+      updateSettings();
+    }
+  });
+
+function enableWakeLockAndAudio() {
+  console.log("enableWakeLockAndAudio called. AudioContext state:", audioCtx.state, "NoSleep enabled:", noSleep.isEnabled);
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume().then(() => {
+      console.log("AudioContext resumed.");
+    }).catch(e => console.error("AudioContext resume error:", e));
+  }
+  // This is the key part for NoSleep:
+  if (!noSleep.isEnabled) {
+    noSleep.enable().then(() => {
+      console.log("Screen wake lock is active."); // You should see this in your console
+    }).catch(e => console.error("Failed to enable screen wake lock:", e));
+  }
+  document.body.removeEventListener('click', enableWakeLockAndAudio);
+  document.body.removeEventListener('touchstart', enableWakeLockAndAudio);
+}
+document.body.addEventListener('click', enableWakeLockAndAudio);
+document.body.addEventListener('touchstart', enableWakeLockAndAudio);
+
+  // Update time signature visual display
   function updateTimeSignatureVisual(ts) {
-    const [num, den] = ts.split('/');
-    const el = document.getElementById('timeSignatureVisual');
-    if(el) {
-        el.querySelector('.numerator').textContent = num;
-        el.querySelector('.denominator').textContent = den;
+    const [numerator, denominator] = ts.split('/').map(Number);
+    const visual = document.getElementById('timeSignatureVisual');
+    const numeratorEl = visual.querySelector('.numerator');
+    const denominatorEl = visual.querySelector('.denominator');
+    numeratorEl.textContent = numerator;
+    denominatorEl.textContent = denominator;
+  }
+
+  // Update subdivision visual display
+  function updateSubdivisionVisual(subdiv) {
+    const container = document.getElementById('subdivisionVisual');
+    container.innerHTML = '';
+    switch (subdiv) {
+      case 1:
+        const quarterNote = document.createElement('div');
+        quarterNote.className = 'note';
+        const quarterHead = document.createElement('div');
+        quarterHead.className = 'note-head';
+        const quarterStem = document.createElement('div');
+        quarterStem.className = 'note-stem';
+        quarterNote.appendChild(quarterHead);
+        quarterNote.appendChild(quarterStem);
+        container.appendChild(quarterNote);
+        break;
+      case 2:
+        const eighthNote = document.createElement('div');
+        eighthNote.className = 'note';
+        const eighthHead = document.createElement('div');
+        eighthHead.className = 'note-head';
+        const eighthStem = document.createElement('div');
+        eighthStem.className = 'note-stem';
+        const eighthFlag = document.createElement('div');
+        eighthFlag.className = 'note-flag';
+        eighthNote.appendChild(eighthHead);
+        eighthNote.appendChild(eighthStem);
+        eighthNote.appendChild(eighthFlag);
+        container.appendChild(eighthNote);
+        break;
+      case 3:
+        for (let i = 0; i < 3; i++) {
+          const tripletNote = document.createElement('div');
+          tripletNote.className = 'note';
+          tripletNote.style.transform = 'scale(0.8)';
+          const tripletHead = document.createElement('div');
+          tripletHead.className = 'note-head';
+          const tripletStem = document.createElement('div');
+          tripletStem.className = 'note-stem';
+          const tripletFlag = document.createElement('div');
+          tripletFlag.className = 'note-flag';
+          tripletNote.appendChild(tripletHead);
+          tripletNote.appendChild(tripletStem);
+          tripletNote.appendChild(tripletFlag);
+          container.appendChild(tripletNote);
+        }
+        const bracket = document.createElement('div');
+        bracket.className = 'triplet-bracket';
+        container.appendChild(bracket);
+        break;
+      case 4:
+        const sixteenthNote = document.createElement('div');
+        sixteenthNote.className = 'note';
+        const sixteenthHead = document.createElement('div');
+        sixteenthHead.className = 'note-head';
+        const sixteenthStem = document.createElement('div');
+        sixteenthStem.className = 'note-stem';
+        const sixteenthFlag1 = document.createElement('div');
+        sixteenthFlag1.className = 'note-flag';
+        const sixteenthFlag2 = document.createElement('div');
+        sixteenthFlag2.className = 'note-flag';
+        sixteenthFlag2.style.top = '8px';
+        sixteenthNote.appendChild(sixteenthHead);
+        sixteenthNote.appendChild(sixteenthStem);
+        sixteenthNote.appendChild(sixteenthFlag1);
+        sixteenthNote.appendChild(sixteenthFlag2);
+        container.appendChild(sixteenthNote);
+        break;
     }
   }
 
-  function updateSubdivisionVisual(sub) {
-    const container = document.getElementById('subdivisionVisual');
-    if(!container) return;
-    container.innerHTML = '';
-    // Simplified Note Rendering for brevity
-    // (Reusing logic from original file conceptually)
-    let html = '';
-    if (sub === 1) html = '<div class="note"><div class="note-head"></div><div class="note-stem"></div></div>';
-    else if (sub === 2) html = '<div class="note"><div class="note-head"></div><div class="note-stem"></div><div class="note-flag"></div></div>';
-    else if (sub === 3) html = '<div style="display:flex"><div class="note" style="transform:scale(0.8)"><div class="note-head"></div><div class="note-stem"></div><div class="note-flag"></div></div><div class="note" style="transform:scale(0.8)"><div class="note-head"></div><div class="note-stem"></div><div class="note-flag"></div></div><div class="note" style="transform:scale(0.8)"><div class="note-head"></div><div class="note-stem"></div><div class="note-flag"></div></div></div><div class="triplet-bracket"></div>';
-    else if (sub === 4) html = '<div class="note"><div class="note-head"></div><div class="note-stem"></div><div class="note-flag"></div><div class="note-flag" style="top:8px"></div></div>';
-    container.innerHTML = html;
-  }
-
+  // Create visual beat indicators based on time signature
   function updateBeatDots() {
     const container = document.getElementById('beatDots');
     container.innerHTML = '';
-    const [num] = state.timeSignature.split('/').map(Number);
-    for (let i = 0; i < num; i++) {
+    const [numerator, denominator] = timeSignature.split('/').map(Number);
+    for (let i = 0; i < numerator; i++) {
       const dot = document.createElement('div');
-      dot.className = 'dot' + (i === 0 ? ' accent' : '');
+      dot.classList.add('dot');
+      if (i === 0) {
+        dot.classList.add('accent');
+      }
       container.appendChild(dot);
     }
   }
 
+  // Highlight the current beat dot
   function highlightDot(index) {
     const dots = document.querySelectorAll('.dot');
     dots.forEach((dot, i) => {
@@ -804,32 +563,66 @@
   }
 
   function handleSavePreset() {
-      const p = { bpm: state.bpm, timeSignature: state.timeSignature, subdivision: state.subdivision };
-      savePreset(p);
-      renderPresets();
+    const ts = document.getElementById("timeSigInput").value;
+    const subdiv = parseInt(document.getElementById("subdivisionInput").value);
+    const name = `${bpm} BPM, ${ts}, Sub: ${subdiv}`;
+    const preset = {
+      name,
+      bpm,
+      timeSignature: ts,
+      subdivision: subdiv,
+    };
+    savePreset(preset);
+    renderPresets();
   }
-  function handleLoadPreset(i) {
-      const p = getPresets()[i];
-      state.bpm = p.bpm; state.timeSignature = p.timeSignature; state.subdivision = p.subdivision;
-      requestUpdate(true);
-      updateUI();
+
+  function handleLoadPreset(idx) {
+    const preset = getPresets()[idx];
+    if (preset) {
+      bpm = preset.bpm;
+      document.getElementById("bpmSlider").value = bpm;
+      document.getElementById("bpmValue").value = bpm;
+      updateSliderFill(bpmSlider);
+      document.getElementById("bpmDisplay").textContent = `${bpm}`;
+      document.getElementById("timeSigInput").value = preset.timeSignature;
+      document.getElementById("subdivisionInput").value = preset.subdivision;
+      updateTimeSignatureVisual(preset.timeSignature);
+      updateSubdivisionVisual(preset.subdivision);
+      updateSettings();
+    }
   }
-  function handleDeletePreset(i) { deletePreset(i); renderPresets(); }
-  
+
+  function handleDeletePreset(idx) {
+    deletePreset(idx);
+    renderPresets();
+  }
+
   function renderPresets() {
     const list = document.getElementById('presetList');
-    if(!list) return;
-    list.innerHTML = getPresets().map((p, i) => `
-      <li>
-        <span>${p.bpm} BPM ${p.timeSignature}</span>
-        <button class="preset-btn" onclick="handleLoadPreset(${i})">Load</button>
-        <button class="preset-btn" onclick="handleDeletePreset(${i})">Del</button>
-      </li>`).join('');
+    list.innerHTML = '';
+    const presets = getPresets();
+    presets.forEach((preset, i) => {
+      const li = document.createElement('li');
+      li.innerHTML = `
+      <span style="flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+        ${preset.bpm} BPM ${preset.timeSignature}, ${subdivisionToText(preset.subdivision)}
+      </span>
+      <button class="preset-btn" onclick="handleLoadPreset(${i})">load</button>
+      <button class="preset-btn" onclick="handleDeletePreset(${i})">delete</button>
+    `;
+      list.appendChild(li);
+    });
   }
 
-  // Auto-resume audio context on interaction
-  document.addEventListener('click', () => { if(audioCtx.state === 'suspended') audioCtx.resume(); });
-  document.addEventListener('touchstart', () => { if(audioCtx.state === 'suspended') audioCtx.resume(); });
-
+  function subdivisionToText(subdivision) {
+    switch (subdivision) {
+      case 1: return 'quarter';
+      case 2: return 'eighth';
+      case 3: return 'triplet';
+      case 4: return 'sixteenth';
+      default: return 'custom';
+    }
+  }
 </script>
+
 </html>
