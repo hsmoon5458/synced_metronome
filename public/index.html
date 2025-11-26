@@ -436,12 +436,13 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
       return;
     }
     if (isRunning && data.startTime) {
-      if (wasRunning && tickTimer) {
-        cancelAnimationFrame(tickTimer);
-        tickTimer = null;
+      if (!wasRunning) {
+        startTime = data.startTime;
+        startMetronomeSync();
+      } else {
+        // Smooth update: update startTime reference for phase correction, but don't restart loop
+        startTime = data.startTime;
       }
-      startTime = data.startTime;
-      startMetronomeSync();
     }
   }
 
