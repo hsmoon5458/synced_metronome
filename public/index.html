@@ -9,6 +9,7 @@
 
 <body>
   <h1>Synced Metronome</h1>
+  <div class="version-display">v1.0.2</div>
   <div class="beat-indicators" id="beatDots"></div>
 
   <div class="card">
@@ -108,7 +109,7 @@
   let subdivision = 1;
   let timeSignature = '4/4';
   let beatCount = 0;
-  let syncing = false;
+  let syncTimeout = null;
 
   // DOM Elements
   const metronomeControls = document.getElementById('metronomeControls');
@@ -405,7 +406,6 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
   }
 
   function syncClock(data) {
-    if (syncing) return;
     bpm = data.bpm;
     subdivision = data.subdivision || 1;
     timeSignature = data.timeSignature || '4/4';
@@ -428,20 +428,29 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
         cancelAnimationFrame(tickTimer);
         tickTimer = null;
       }
+      if (syncTimeout) {
+        clearTimeout(syncTimeout);
+        syncTimeout = null;
+      }
       document.querySelectorAll('.dot').forEach(dot => dot.classList.remove('active'));
       return;
     }
     if (isRunning && data.startTime) {
+      if (wasRunning && tickTimer) {
+        cancelAnimationFrame(tickTimer);
+        tickTimer = null;
+      }
       startTime = data.startTime;
       startMetronomeSync();
     }
   }
 
   function startMetronomeSync() {
-    syncing = true;
+    if (syncTimeout) {
+      clearTimeout(syncTimeout);
+      syncTimeout = null;
+    }
     try {
-      beatCount = 0;
-      updateBeatDots();
       audioCtx.resume().then(() => {
         const now = globalNow();
         const intervalMs = (60000 / bpm) / subdivision;
@@ -450,19 +459,17 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
         const nextTickTimeMs = startTime + (ticksSinceStart + 1) * intervalMs;
         const delayMs = nextTickTimeMs - now;
         const clampedDelay = Math.max(0, Math.min(1000, delayMs));
-        setTimeout(() => {
+        syncTimeout = setTimeout(() => {
+          syncTimeout = null;
           nextTick = audioCtx.currentTime;
           beatCount = ticksSinceStart + 1;
           tickLoop();
-          syncing = false;
         }, clampedDelay);
       }).catch(err => {
         console.error('Audio context resume error:', err);
-        syncing = false;
       });
     } catch (error) {
       console.error('Error starting metronome:', error);
-      syncing = false;
     }
   }
 
