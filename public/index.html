@@ -532,16 +532,277 @@
   function highlightDot(index) {
     const dots = document.querySelectorAll('.dot');
     dots.forEach((dot, i) => {
-        if (i === index) dot.classList.add('active');
-        else dot.classList.remove('active');
+      dot.classList.toggle('active', i === index);
     });
   }
 
-  // --- Presets ---
-  function getPresets() { return JSON.parse(localStorage.getItem('metronomePresets') || '[]'); }
-  function savePreset(p) { const l = getPresets(); l.push(p); localStorage.setItem('metronomePresets', JSON.stringify(l)); }
-  function deletePreset(i) { const l = getPresets(); l.splice(i, 1); localStorage.setItem('metronomePresets', JSON.stringify(l)); }
-  
+  // Change BPM value
+  function changeBpm(delta) {
+    bpm = Math.max(30, Math.min(300, bpm + delta));
+    bpmSlider.value = bpm;
+    bpmInput.value = bpm;
+    updateSliderFill(bpmSlider);
+    document.getElementById("bpmDisplay").textContent = `${bpm}`;
+    if (role === 'host') {
+      updateSettings();
+    }
+  }
+
+  // Debounce function for slider changes
+  let updateTimeout = null;
+  function debounceUpdateSettings() {
+    clearTimeout(updateTimeout);
+    updateTimeout = setTimeout(updateSettings, 300);
+  }
+
+  // Synchronize time with server
+  async function syncTime() {
+    const samples = [];
+    let latencySum = 0;
+    document.getElementById('latencyDisplay').textContent = 'Syncing with server...';
+    try {
+      for (let i = 0; i < 8; i++) {
+        const t0 = performance.now();
+        const res = await fetch('/time');
+        const t1 = performance.now();
+        const json = await res.json();
+        const roundTrip = t1 - t0;
+        latencySum += roundTrip;
+        const serverTime = json.serverTime + (roundTrip / 2);
+        const offset = serverTime - Date.now();
+        samples.push(offset);
+        await new Promise(r => setTimeout(r, 50));
+      }
+      samples.sort((a, b) => a - b);
+      timeOffset = samples[Math.floor(samples.length / 2)];
+      const avgLatency = Math.round(latencySum / 8);
+      document.getElementById('latencyDisplay').textContent = `Network latency: ~${avgLatency}ms`;
+      return true;
+    } catch (error) {
+      console.error('Failed to sync time:', error);
+      document.getElementById('latencyDisplay').textContent = 'Time sync failed. Please refresh.';
+      return false;
+    }
+  }
+
+  function globalNow() {
+    return Date.now() + timeOffset;
+  }
+
+  function scheduleClick(time, isAccent = false) {
+    const noiseLength = isAccent ? 0.08 : 0.05;
+    const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate * noiseLength, audioCtx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (isAccent ? 140 : 200));
+    }
+    const noise = audioCtx.createBufferSource();
+    noise.buffer = buffer;
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(isAccent ? 2.0 : 1.0, time);
+    gain.gain.linearRampToValueAtTime(0.001, time + noiseLength);
+    noise.connect(gain).connect(audioCtx.destination);
+    noise.start(time);
+    const osc = audioCtx.createOscillator();
+    const oscGain = audioCtx.createGain();
+    osc.type = isAccent ? 'square' : 'triangle';
+    osc.frequency.setValueAtTime(isAccent ? 1500 : 1000, time);
+    oscGain.gain.setValueAtTime(isAccent ? 10.0 : 5.0, time);
+    oscGain.gain.linearRampToValueAtTime(0.001, time + (isAccent ? 0.09 : 0.05));
+    osc.connect(oscGain).connect(audioCtx.destination);
+    osc.start(time);
+    osc.stop(time + (isAccent ? 0.09 : 0.05));
+  }
+
+  function tickLoop() {
+    if (!isRunning) return;
+    try {
+      const interval = (60 / bpm) / subdivision;
+      const now = audioCtx.currentTime;
+      const [numerator, denominator] = timeSignature.split('/').map(Number);
+      const ticksPerBar = numerator * subdivision;
+      while (nextTick < now + 0.2) {
+        const currentBeat = Math.floor(beatCount / subdivision);
+        const isFirstBeat = (beatCount % ticksPerBar === 0);
+        const isMainBeat = (beatCount % subdivision === 0);
+        scheduleClick(nextTick, isFirstBeat);
+        if (isMainBeat) {
+          const visualBeat = currentBeat % numerator;
+          requestAnimationFrame(() => highlightDot(visualBeat));
+        }
+        nextTick += interval;
+        beatCount++;
+      }
+      tickTimer = requestAnimationFrame(tickLoop);
+    } catch (error) {
+      console.error('Error in tick loop:', error);
+      if (isRunning) {
+        setTimeout(() => {
+          if (isRunning) {
+            tickTimer = requestAnimationFrame(tickLoop);
+          }
+        }, 1000);
+      }
+    }
+  }
+
+  function syncClock(data) {
+    bpm = data.bpm;
+    subdivision = data.subdivision || 1;
+    timeSignature = data.timeSignature || '4/4';
+    bpmInput.value = bpm;
+    bpmSlider.value = bpm;
+    updateSliderFill(bpmSlider);
+    document.getElementById("bpmDisplay").textContent = `${bpm}`;
+    updateTimeSignatureVisual(timeSignature);
+    updateSubdivisionVisual(subdivision);
+    updateBeatDots();
+    const wasRunning = isRunning;
+    isRunning = data.isRunning;
+    document.body.classList.toggle('playing', isRunning);
+    if (role === 'host') {
+      startButton.disabled = isRunning;
+      stopButton.disabled = !isRunning;
+    }
+    if (!isRunning && wasRunning) {
+      if (tickTimer) {
+        cancelAnimationFrame(tickTimer);
+        tickTimer = null;
+      }
+      if (syncTimeout) {
+        clearTimeout(syncTimeout);
+        syncTimeout = null;
+      }
+      document.querySelectorAll('.dot').forEach(dot => dot.classList.remove('active'));
+      return;
+    }
+    if (isRunning && data.startTime) {
+      if (wasRunning && tickTimer) {
+        cancelAnimationFrame(tickTimer);
+        tickTimer = null;
+      }
+      startTime = data.startTime;
+      startMetronomeSync();
+    }
+  }
+
+  function startMetronomeSync() {
+    if (syncTimeout) {
+      clearTimeout(syncTimeout);
+      syncTimeout = null;
+    }
+    try {
+      audioCtx.resume().then(() => {
+        const now = globalNow();
+        const intervalMs = (60000 / bpm) / subdivision;
+        const elapsedMs = now - startTime;
+        const ticksSinceStart = Math.floor(elapsedMs / intervalMs);
+        const nextTickTimeMs = startTime + (ticksSinceStart + 1) * intervalMs;
+        const delayMs = nextTickTimeMs - now;
+        const clampedDelay = Math.max(0, Math.min(1000, delayMs));
+        syncTimeout = setTimeout(() => {
+          syncTimeout = null;
+          nextTick = audioCtx.currentTime;
+          beatCount = ticksSinceStart + 1;
+          tickLoop();
+        }, clampedDelay);
+      }).catch(err => {
+        console.error('Audio context resume error:', err);
+      });
+    } catch (error) {
+      console.error('Error starting metronome:', error);
+    }
+  }
+
+  socket.on('sync', syncClock);
+
+  socket.on('clientCount', (count) => {
+    const connectedCount = count - 1;
+    document.getElementById("statusDisplay").textContent = connectedCount === 1
+      ? `1 client connected`
+      : `${connectedCount} clients connected`;
+  });
+
+  function updateSettings() {
+    if (role !== 'host') return;
+    const ts = document.getElementById("timeSigInput").value;
+    const subdiv = parseInt(document.getElementById("subdivisionInput").value);
+    updateTimeSignatureVisual(ts);
+    updateSubdivisionVisual(subdiv);
+    updateBeatDots();
+    socket.emit('updateSettings', {
+      bpm,
+      timeSignature: ts,
+      subdivision: subdiv
+    });
+  }
+
+  document.getElementById("timeSigInput").addEventListener('change', function () {
+    updateTimeSignatureVisual(this.value);
+    updateSettings();
+  });
+
+  document.getElementById("subdivisionInput").addEventListener('change', function () {
+    updateSubdivisionVisual(parseInt(this.value));
+    updateSettings();
+  });
+
+  function startMetronome() {
+    if (role !== 'host') return;
+    audioCtx.resume();
+    startButton.disabled = true;
+    if (!noSleep.isEnabled) { 
+      noSleep.enable().catch(err => console.error('Failed to enable NoSleep on metronome start:', err));
+    }
+    socket.emit('startMetronome');
+  }
+
+  function stopMetronome() {
+    if (role !== 'host') return;
+    isRunning = false;
+    stopButton.disabled = true;
+    if (tickTimer) {
+      cancelAnimationFrame(tickTimer);
+      tickTimer = null;
+    }
+    socket.emit('stopMetronome');
+  }
+
+  function setRole(r) {
+    role = r;
+    roleChooser.style.display = 'none';
+    metronomeControls.style.display = 'block';
+    const isHost = r === 'host';
+    document.getElementById("hostControls").style.display = isHost ? 'block' : 'none';
+    clientVisuals.style.display = isHost ? 'none' : 'flex';
+    document.getElementById("bpmDisplay").style.display = isHost ? 'none' : 'block';
+    document.getElementById("statusInfo").style.display = isHost ? 'none' : 'block';
+    updateBeatDots();
+    updateTimeSignatureVisual(timeSignature);
+    updateSubdivisionVisual(subdivision);
+    syncTime().then((success) => {
+      if (success) {
+        socket.emit('identify', r);
+      }
+    });
+  }
+
+  function getPresets() {
+    return JSON.parse(localStorage.getItem('metronomePresets') || '[]');
+  }
+
+  function savePreset(preset) {
+    const presets = getPresets();
+    presets.push(preset);
+    localStorage.setItem('metronomePresets', JSON.stringify(presets));
+  }
+
+  function deletePreset(index) {
+    const presets = getPresets();
+    presets.splice(index, 1);
+    localStorage.setItem('metronomePresets', JSON.stringify(presets));
+  }
+
   function handleSavePreset() {
       const p = { bpm: state.bpm, timeSignature: state.timeSignature, subdivision: state.subdivision };
       savePreset(p);
