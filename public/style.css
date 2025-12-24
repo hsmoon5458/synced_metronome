@@ -327,6 +327,14 @@ button.stop:hover {
     color: #181818;
 }
 
+button.stop:disabled {
+    background: #2d2d2d;
+    color: #555;
+    box-shadow: none;
+    cursor: not-allowed;
+    transform: none;
+}
+
 /* Preset Bank */
 #presetBank {
     margin-top: 1.5em;

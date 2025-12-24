@@ -75,8 +75,11 @@
           </select>
         </div>
         <div class="form-group">
-          <label for="subdivisionInput">Subdivision:</label>
-          <select id="subdivisionInput">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <label for="subdivisionInput" style="margin:0;">Subdivision:</label>
+            <div id="hostSubdivisionVisual" style="height: 38px;"></div>
+          </div>
+          <select id="subdivisionInput" style="margin-top: 0.5rem;">
             <option value="1">Quarter Note (1/4)</option>
             <option value="2" selected>Eighth Note (1/8)</option>
             <option value="3">Eighth Note Triplets</option>
@@ -259,30 +262,44 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
 
   // Update subdivision visual display
   function updateSubdivisionVisual(subdiv) {
-    const container = document.getElementById('subdivisionVisual');
-    container.innerHTML = '';
-    const img = document.createElement('img');
-    img.className = 'note-icon';
+    subdiv = parseInt(subdiv);
     
-    switch (subdiv) {
-      case 1:
-        img.src = 'icons/quarter.svg';
-        img.alt = 'Quarter Note';
-        break;
-      case 2:
-        img.src = 'icons/eighth.svg';
-        img.alt = 'Eighth Notes';
-        break;
-      case 3:
-        img.src = 'icons/triplet.svg';
-        img.alt = 'Triplets';
-        break;
-      case 4:
-        img.src = 'icons/sixteenth.svg';
-        img.alt = 'Sixteenth Notes';
-        break;
-    }
-    container.appendChild(img);
+    // Update both client and host visuals
+    const targets = [
+      document.getElementById('subdivisionVisual'),
+      document.getElementById('hostSubdivisionVisual')
+    ];
+
+    targets.forEach(container => {
+      if (!container) return;
+      container.innerHTML = '';
+      
+      const img = document.createElement('img');
+      img.className = 'note-icon';
+      
+      switch (subdiv) {
+        case 1:
+          img.src = 'icons/quarter.svg';
+          img.alt = 'Quarter Note';
+          break;
+        case 2:
+          img.src = 'icons/eighth.svg';
+          img.alt = 'Eighth Notes';
+          break;
+        case 3:
+          img.src = 'icons/triplet.svg';
+          img.alt = 'Triplets';
+          break;
+        case 4:
+          img.src = 'icons/sixteenth.svg';
+          img.alt = 'Sixteenth Notes';
+          break;
+        default:
+          console.warn('Unknown subdivision:', subdiv);
+          return;
+      }
+      container.appendChild(img);
+    });
   }
 
   // Create visual beat indicators based on time signature
