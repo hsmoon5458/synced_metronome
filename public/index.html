@@ -214,6 +214,27 @@
       silentSource.connect(audioCtx.destination);
       silentSource.start();
       console.log('Silent audio started for active state');
+      
+      // Update Media Session metadata to show in lock screen/control center
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: 'Synced Metronome',
+          artist: 'Click Sync',
+          album: 'Metronome Session',
+          artwork: [
+            { src: 'https://via.placeholder.com/512?text=Metronome', sizes: '512x512', type: 'image/png' }
+          ]
+        });
+
+        // Add action handlers to keep session alive and potentially allow control
+        navigator.mediaSession.setActionHandler('play', () => {
+          if (audioCtx.state === 'suspended') audioCtx.resume();
+        });
+        navigator.mediaSession.setActionHandler('pause', () => {
+          // Optional: handle pause if we want to stop metronome via lock screen
+          // For now, we just acknowledge the event to keep session active
+        });
+      }
     } catch (e) {
       console.error("Error starting silent audio:", e);
     }
