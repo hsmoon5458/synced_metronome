@@ -9,7 +9,7 @@
 
 <body>
   <h1>Synced Metronome</h1>
-  <div class="version-display">v1.2.1</div>
+  <div class="version-display">v1.2.2</div>
   <div class="version-meta">
     <p>Last Modified: 2025-12-23</p>
     <p>Developer: Hye Sung Moon</p>
@@ -359,25 +359,43 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
   // Synchronize time with server
   async function syncTime() {
     const samples = [];
-    let latencySum = 0;
     document.getElementById('latencyDisplay').textContent = 'Syncing with server...';
+    
     try {
-      for (let i = 0; i < 8; i++) {
+      // Take more samples for better accuracy
+      for (let i = 0; i < 16; i++) {
         const t0 = performance.now();
         const res = await fetch('/time');
         const t1 = performance.now();
         const json = await res.json();
         const roundTrip = t1 - t0;
-        latencySum += roundTrip;
+        
+        // Calculate offset assuming symmetric latency
         const serverTime = json.serverTime + (roundTrip / 2);
         const offset = serverTime - Date.now();
-        samples.push(offset);
-        await new Promise(r => setTimeout(r, 50));
+        
+        samples.push({ roundTrip, offset });
+        
+        // Random jitter to avoid lock-step issues
+        await new Promise(r => setTimeout(r, 50 + Math.random() * 50));
       }
-      samples.sort((a, b) => a - b);
-      timeOffset = samples[Math.floor(samples.length / 2)];
-      const avgLatency = Math.round(latencySum / 8);
-      document.getElementById('latencyDisplay').textContent = `Network latency: ~${avgLatency}ms`;
+
+      // Sort by round trip time to find best samples (lowest latency)
+      samples.sort((a, b) => a.roundTrip - b.roundTrip);
+      
+      // Use the best 50% of samples (lowest RTT) to filter out network spikes
+      const bestSamples = samples.slice(0, Math.floor(samples.length / 2));
+      
+      // Calculate average offset from best samples
+      // We can also use median, but average of best samples is robust enough
+      const sumOffset = bestSamples.reduce((acc, s) => acc + s.offset, 0);
+      timeOffset = Math.round(sumOffset / bestSamples.length);
+      
+      // Calculate average latency from best samples for display
+      const avgLatency = Math.round(bestSamples.reduce((acc, s) => acc + s.roundTrip, 0) / bestSamples.length);
+      
+      document.getElementById('latencyDisplay').textContent = `Avg Latency: ~${avgLatency}ms`;
+      console.log('Sync complete. Time offset:', timeOffset, 'Avg Latency:', avgLatency, 'Best samples:', bestSamples);
       return true;
     } catch (error) {
       console.error('Failed to sync time:', error);
@@ -500,10 +518,27 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
         const ticksSinceStart = Math.floor(elapsedMs / intervalMs);
         const nextTickTimeMs = startTime + (ticksSinceStart + 1) * intervalMs;
         const delayMs = nextTickTimeMs - now;
+        
+        // Calculate the precise AudioContext time for the next tick
+        // We map the target Server Time to AudioContext time
+        // Relation: AudioTime = CurrentAudioTime + (TargetServerTime - CurrentServerTime)
+        // Note: dividing by 1000 because audioCtx uses seconds
+        const delaySec = delayMs / 1000;
+        
+        // Compensate for Output Latency if available (experimental feature)
+        // audioCtx.outputLatency is the time from processing to sound output
+        // We subtract it to schedule the sound earlier so it *arrives* on time
+        const hardwareLatency = (audioCtx.outputLatency || 0) + (audioCtx.baseLatency || 0);
+        
+        // Set nextTick anchor based on the math, not "now"
+        nextTick = audioCtx.currentTime + delaySec - hardwareLatency;
+        
         const clampedDelay = Math.max(0, Math.min(1000, delayMs));
+        
         syncTimeout = setTimeout(() => {
           syncTimeout = null;
-          nextTick = audioCtx.currentTime;
+          // Don't reset nextTick here! It's already set precisely above.
+          // Just update the beat count
           beatCount = ticksSinceStart + 1;
           tickLoop();
         }, clampedDelay);
