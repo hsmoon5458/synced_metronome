@@ -535,7 +535,10 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
     };
 
     if (isRunning) {
-      payload.startTime = globalNow();
+      const delayMs = (nextTick - audioCtx.currentTime) * 1000;
+      const nextBeatTime = globalNow() + delayMs;
+      const newInterval = (60000 / bpm) / subdiv;
+      payload.startTime = nextBeatTime - (beatCount * newInterval);
     }
 
     socket.emit('updateSettings', payload);
