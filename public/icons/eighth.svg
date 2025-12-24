@@ -1,7 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 40" fill="#ff9800">
-  <ellipse cx="12" cy="32" rx="6" ry="4.5"/>
-  <rect x="16" y="8" width="2.5" height="24"/>
-  <ellipse cx="36" cy="32" rx="6" ry="4.5"/>
-  <rect x="40" y="8" width="2.5" height="24"/>
-  <polygon points="16,8 42.5,8 42.5,13 16,13"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 40" fill="#ff9800">
+  <ellipse cx="14" cy="32" rx="6" ry="4.5"/>
+  <rect x="18" y="4" width="2.5" height="28"/>
+  <path d="M20.5 4 C 28 4 31 12 28 20 C 27 14 25 10 20.5 12 V 4 Z"/>
 </svg>
