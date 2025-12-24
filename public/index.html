@@ -153,12 +153,26 @@
     bpmSlider.addEventListener('change', () => updateSliderFill(bpmSlider));
   }
 
+  // Handle visibility change to switch between RAF and setTimeout
+  document.addEventListener("visibilitychange", () => {
+    if (isRunning) {
+      // Cancel any existing loop to prevent duplicates
+      if (tickTimer) {
+        cancelAnimationFrame(tickTimer);
+        clearTimeout(tickTimer);
+      }
+      // Restart loop immediately
+      tickLoop();
+    }
+  });
   // Enable audio context on user interaction
-  document.body.addEventListener('click', () => {
+  const unlockAudio = () => {
     if (audioCtx.state === 'suspended') {
       audioCtx.resume();
     }
-  });
+  };
+  document.body.addEventListener('click', unlockAudio);
+  document.body.addEventListener('touchstart', unlockAudio);
 
   // Update BPM value display when slider changes
   bpmSlider.addEventListener('input', () => {
@@ -207,13 +221,21 @@
   function startSilentAudio() {
     if (silentSource) return;
     try {
-      const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate, audioCtx.sampleRate);
-      silentSource = audioCtx.createBufferSource();
-      silentSource.buffer = buffer;
-      silentSource.loop = true;
-      silentSource.connect(audioCtx.destination);
-      silentSource.start();
-      console.log('Silent audio started for active state');
+      // Use an oscillator for better background persistence (especially iOS)
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(440, audioCtx.currentTime); // Standard A4
+      
+      // Virtually silent gain, but not exactly 0 to trick aggressive power savers
+      gain.gain.setValueAtTime(0.0001, audioCtx.currentTime); 
+      
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start();
+      silentSource = osc; // Keep reference to prevent garbage collection
+      
+      console.log('Silent background oscillator started');
       
       // Update Media Session metadata to show in lock screen/control center
       if ('mediaSession' in navigator) {
@@ -226,13 +248,11 @@
           ]
         });
 
-        // Add action handlers to keep session alive and potentially allow control
         navigator.mediaSession.setActionHandler('play', () => {
           if (audioCtx.state === 'suspended') audioCtx.resume();
         });
         navigator.mediaSession.setActionHandler('pause', () => {
-          // Optional: handle pause if we want to stop metronome via lock screen
-          // For now, we just acknowledge the event to keep session active
+           // No-op to keep session active
         });
       }
     } catch (e) {
@@ -478,31 +498,46 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
     if (!isRunning) return;
     try {
       const interval = (60 / bpm) / subdivision;
+      // Use performance.now() + offset for logic, but AudioContext time for scheduling
       const now = audioCtx.currentTime;
+      
       const [numerator, denominator] = timeSignature.split('/').map(Number);
       const ticksPerBar = numerator * subdivision;
-      while (nextTick < now + 0.2) {
+      
+      // Look ahead time (increase slightly for stability)
+      while (nextTick < now + 0.1) {
         const currentBeat = Math.floor(beatCount / subdivision);
         const isFirstBeat = (beatCount % ticksPerBar === 0);
         const isMainBeat = (beatCount % subdivision === 0);
+        
         scheduleClick(nextTick, isFirstBeat);
-        if (isMainBeat) {
+        
+        // Visuals only update if visible (requestAnimationFrame pauses in background)
+        // This prevents the loop from crashing if RAF stops
+        if (document.visibilityState === 'visible' && isMainBeat) {
           const visualBeat = currentBeat % numerator;
           requestAnimationFrame(() => {
             highlightDot(visualBeat);
             flashScreen(isFirstBeat);
           });
         }
+        
         nextTick += interval;
         beatCount++;
       }
-      tickTimer = requestAnimationFrame(tickLoop);
+      
+      // Use setTimeout as a backup for requestAnimationFrame when in background
+      if (document.visibilityState === 'visible') {
+        tickTimer = requestAnimationFrame(tickLoop);
+      } else {
+        tickTimer = setTimeout(tickLoop, 25); // Check every 25ms in background
+      }
     } catch (error) {
       console.error('Error in tick loop:', error);
       if (isRunning) {
         setTimeout(() => {
           if (isRunning) {
-            tickTimer = requestAnimationFrame(tickLoop);
+             tickLoop(); // Try to restart immediately
           }
         }, 1000);
       }
@@ -530,6 +565,7 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
     if (!isRunning && wasRunning) {
       if (tickTimer) {
         cancelAnimationFrame(tickTimer);
+        clearTimeout(tickTimer);
         tickTimer = null;
       }
       if (syncTimeout) {
@@ -670,7 +706,9 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
     isRunning = false;
     stopButton.disabled = true;
     if (tickTimer) {
+      // Clear both RAF and Timeout to be safe
       cancelAnimationFrame(tickTimer);
+      clearTimeout(tickTimer);
       tickTimer = null;
     }
     socket.emit('stopMetronome');
