@@ -22,9 +22,10 @@
       <p>Host: Control the metronome</p>
       <p>Client: Follow host's metronome</p>
       <div class="button-group">
-        <button onclick="setRole('host')">Host</button>
-        <button onclick="setRole('client')">Client</button>
+        <button id="btnChooseHost" onclick="setRole('host')">Host</button>
+        <button id="btnChooseClient" onclick="setRole('client')">Client</button>
       </div>
+      <p id="hostTakenMsg" style="display:none; color:#d32f2f; margin-top:0.5rem; font-size:0.9rem;">Host role is currently occupied.</p>
     </div>
 
     <div id="metronomeControls" style="display:none;">
@@ -125,6 +126,8 @@
   const stopButton = document.getElementById('stopButton');
   const clientVisuals = document.getElementById('clientVisuals');
   const noSleep = new NoSleep();
+  const btnChooseHost = document.getElementById('btnChooseHost');
+  const hostTakenMsg = document.getElementById('hostTakenMsg');
 
   // Fetch and display version from server
   fetch('/version')
@@ -577,6 +580,22 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
     document.getElementById("statusDisplay").textContent = connectedCount === 1
       ? `1 client connected`
       : `${connectedCount} clients connected`;
+  });
+
+  socket.on('hostAvailability', (isAvailable) => {
+    if (role) return; // Only update if still in role selection screen
+    
+    if (isAvailable) {
+      btnChooseHost.disabled = false;
+      btnChooseHost.textContent = "Host";
+      btnChooseHost.title = "";
+      hostTakenMsg.style.display = 'none';
+    } else {
+      btnChooseHost.disabled = true;
+      btnChooseHost.textContent = "Host (Occupied)";
+      btnChooseHost.title = "Another user is already the host";
+      hostTakenMsg.style.display = 'block';
+    }
   });
 
   function updateSettings() {

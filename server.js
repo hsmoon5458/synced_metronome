@@ -45,6 +45,9 @@ io.on('connection', (socket) => {
   // Notify all clients about new connection count
   io.emit('clientCount', clients.size);
   
+  // Notify new client about host availability
+  socket.emit('hostAvailability', hostSocketId === null);
+  
   // Send current state to the new client
   socket.emit('sync', {
     bpm: metronomeState.bpm,
@@ -63,6 +66,8 @@ io.on('connection', (socket) => {
       if (isNewHost) {
         hostSocketId = socket.id;
         console.log(`Host identified: ${socket.id}`);
+        // Broadcast that host is taken
+        io.emit('hostAvailability', false);
       } else {
         console.log(`Client ${socket.id} attempted to become host, but a host already exists`);
         socket.emit('hostStatus', { isHost: false, message: 'Another host is already connected' });
@@ -168,6 +173,9 @@ io.on('connection', (socket) => {
     if (socket.id === hostSocketId) {
       console.log('Host disconnected');
       hostSocketId = null;
+      
+      // Broadcast that host is available again
+      io.emit('hostAvailability', true);
       
       // If metronome was running, stop it
       if (metronomeState.isRunning) {
