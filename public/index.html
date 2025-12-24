@@ -71,10 +71,7 @@
           <select id="timeSigInput">
             <option value="4/4">4/4</option>
             <option value="3/4">3/4</option>
-            <option value="2/4">2/4</option>
             <option value="6/8">6/8</option>
-            <option value="7/8">7/8</option>
-            <option value="5/4">5/4</option>
           </select>
         </div>
         <div class="form-group">
@@ -264,71 +261,28 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
   function updateSubdivisionVisual(subdiv) {
     const container = document.getElementById('subdivisionVisual');
     container.innerHTML = '';
+    const img = document.createElement('img');
+    img.className = 'note-icon';
+    
     switch (subdiv) {
       case 1:
-        const quarterNote = document.createElement('div');
-        quarterNote.className = 'note';
-        const quarterHead = document.createElement('div');
-        quarterHead.className = 'note-head';
-        const quarterStem = document.createElement('div');
-        quarterStem.className = 'note-stem';
-        quarterNote.appendChild(quarterHead);
-        quarterNote.appendChild(quarterStem);
-        container.appendChild(quarterNote);
+        img.src = 'icons/quarter.svg';
+        img.alt = 'Quarter Note';
         break;
       case 2:
-        const eighthNote = document.createElement('div');
-        eighthNote.className = 'note';
-        const eighthHead = document.createElement('div');
-        eighthHead.className = 'note-head';
-        const eighthStem = document.createElement('div');
-        eighthStem.className = 'note-stem';
-        const eighthFlag = document.createElement('div');
-        eighthFlag.className = 'note-flag';
-        eighthNote.appendChild(eighthHead);
-        eighthNote.appendChild(eighthStem);
-        eighthNote.appendChild(eighthFlag);
-        container.appendChild(eighthNote);
+        img.src = 'icons/eighth.svg';
+        img.alt = 'Eighth Notes';
         break;
       case 3:
-        for (let i = 0; i < 3; i++) {
-          const tripletNote = document.createElement('div');
-          tripletNote.className = 'note';
-          tripletNote.style.transform = 'scale(0.8)';
-          const tripletHead = document.createElement('div');
-          tripletHead.className = 'note-head';
-          const tripletStem = document.createElement('div');
-          tripletStem.className = 'note-stem';
-          const tripletFlag = document.createElement('div');
-          tripletFlag.className = 'note-flag';
-          tripletNote.appendChild(tripletHead);
-          tripletNote.appendChild(tripletStem);
-          tripletNote.appendChild(tripletFlag);
-          container.appendChild(tripletNote);
-        }
-        const bracket = document.createElement('div');
-        bracket.className = 'triplet-bracket';
-        container.appendChild(bracket);
+        img.src = 'icons/triplet.svg';
+        img.alt = 'Triplets';
         break;
       case 4:
-        const sixteenthNote = document.createElement('div');
-        sixteenthNote.className = 'note';
-        const sixteenthHead = document.createElement('div');
-        sixteenthHead.className = 'note-head';
-        const sixteenthStem = document.createElement('div');
-        sixteenthStem.className = 'note-stem';
-        const sixteenthFlag1 = document.createElement('div');
-        sixteenthFlag1.className = 'note-flag';
-        const sixteenthFlag2 = document.createElement('div');
-        sixteenthFlag2.className = 'note-flag';
-        sixteenthFlag2.style.top = '8px';
-        sixteenthNote.appendChild(sixteenthHead);
-        sixteenthNote.appendChild(sixteenthStem);
-        sixteenthNote.appendChild(sixteenthFlag1);
-        sixteenthNote.appendChild(sixteenthFlag2);
-        container.appendChild(sixteenthNote);
+        img.src = 'icons/sixteenth.svg';
+        img.alt = 'Sixteenth Notes';
         break;
     }
+    container.appendChild(img);
   }
 
   // Create visual beat indicators based on time signature
@@ -658,6 +612,8 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
       cancelAnimationFrame(tickTimer);
       tickTimer = null;
     }
+    // clear highlight immediately
+    document.querySelectorAll('.dot').forEach(dot => dot.classList.remove('active'));
     socket.emit('stopMetronome');
   }
 

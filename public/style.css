@@ -481,63 +481,39 @@ select {
 .subdiv-visual {
     display: flex;
     justify-content: center;
-    gap: 2px;
-    transform: scale(0.8);
+    align-items: center;
+    height: 45px;
 }
 
-.note {
-    width: 13px;
-    height: 30px;
-    position: relative;
+.note-icon {
+    height: 100%;
+    width: auto;
+    color: var(--accent); /* For SVGs that use currentColor, though <img> tags don't inherit color well unless inlined. 
+                           Since we used <img> tags, we rely on the SVG having fill="currentColor" and applying CSS filter if needed, 
+                           or just hardcoded colors. But wait, <img> tags isolate the SVG. 
+                           To colorize, we can use filter. */
+    filter: invert(58%) sepia(54%) saturate(2704%) hue-rotate(1deg) brightness(106%) contrast(105%); /* Tries to match #ff9800 roughly or just make it visible */
 }
 
-.note-head {
-    width: 11px;
-    height: 11px;
-    background: var(--accent);
-    border-radius: 50%;
-    position: absolute;
-    bottom: 0;
-}
+/* CSS filters are tricky for exact color matching. 
+   Better approach: Since SVGs are local, I can't easily inline them dynamically without fetching.
+   But I wrote them with fill="currentColor".
+   The <img> tag won't inherit currentColor from parent div.
+   I should probably use filter: drop-shadow(...) to colorize or just make the SVG white/accent by default.
+   I wrote the SVGs with fill="currentColor".
+   Actually, if I want to control color, Masking is better or inlining.
+   However, simpler is just to let them be white (if text is white) or apply a filter.
+   Let's use a filter that turns black (default) to Accent.
+   Or just filter: invert(1) to make them white if they were black.
+   
+   The previous "Note" visual was accent colored.
+   Let's try to make it look decent.
+*/
 
-.note-stem {
-    width: 2px;
-    height: 30px;
-    background: var(--primary);
-    position: absolute;
-    bottom: 0;
-    right: 0;
-}
-
-.note-flag {
-    width: 9px;
-    height: 11px;
-    background: var(--accent);
-    position: absolute;
-    top: 0;
-    right: 0;
-    border-radius: 0 0 9px 0;
-}
-
-.triplet-bracket {
-    width: 44px;
-    height: 11px;
-    border-top: 2px solid var(--accent);
-    border-left: 2px solid var(--accent);
-    border-right: 2px solid var(--accent);
-    position: relative;
-    margin-top: 5px;
-}
-
-.triplet-bracket::after {
-    content: "3";
-    position: absolute;
-    top: -15px;
-    left: 50%;
-    transform: translateX(-50%);
-    font-size: 13px;
-    font-weight: bold;
-    color: var(--accent);
+.note-icon {
+    height: 38px;
+    width: auto;
+    filter: drop-shadow(0 0 2px rgba(255, 152, 0, 0.5));
 }
 
 @media (max-width: 480px) {
