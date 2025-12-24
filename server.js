@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const socketIO = require('socket.io');
 const path = require('path');
+const packageJson = require('./package.json');
 
 // Configuration
 const PORT = process.env.PORT || 3000;
@@ -24,6 +25,11 @@ let clients = new Set();
 
 // Serve static files from the public directory
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Endpoint to get the version
+app.get('/version', (req, res) => {
+  res.json({ version: packageJson.version });
+});
 
 // Time synchronization endpoint
 app.get('/time', (req, res) => {

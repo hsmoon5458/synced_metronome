@@ -9,7 +9,7 @@
 
 <body>
   <h1>Synced Metronome</h1>
-  <div class="version-display">v1.2.3</div>
+  <div class="version-display" id="versionDisplay">v...</div>
   <div class="version-meta">
     <p>Last Modified: 2025-12-23</p>
     <p>Developer: Hye Sung Moon</p>
@@ -59,6 +59,10 @@
               <button onclick="changeBpm(1)">+</button>
             </div>
             <input type="range" id="bpmSlider" min="30" max="300" value="120">
+            <div class="button-group" style="margin-top: 1rem;">
+              <button id="startButton" onclick="startMetronome()">Start</button>
+              <button id="stopButton" class="stop" onclick="stopMetronome()" disabled>Stop</button>
+            </div>
           </div>
         </div>
         <div class="form-group">
@@ -81,10 +85,6 @@
             <option value="4">Sixteenth Note (1/16)</option>
           </select>
         </div>
-      </div>
-      <div class="button-group">
-        <button id="startButton" onclick="startMetronome()">Start</button>
-        <button id="stopButton" class="stop" onclick="stopMetronome()" disabled>Stop</button>
       </div>
       <div id="presetBank">
         <h3>Preset Bank</h3>
@@ -125,6 +125,14 @@
   const stopButton = document.getElementById('stopButton');
   const clientVisuals = document.getElementById('clientVisuals');
   const noSleep = new NoSleep();
+
+  // Fetch and display version from server
+  fetch('/version')
+    .then(res => res.json())
+    .then(data => {
+      document.getElementById('versionDisplay').textContent = `v${data.version}`;
+    })
+    .catch(err => console.error('Failed to fetch version:', err));
 
   // Slider fill logic
   function updateSliderFill(slider) {

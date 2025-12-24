@@ -78,8 +78,8 @@ body>* {
 .card {
     background: var(--bg-card);
     border-radius: 1.5rem;
-    padding: 2rem 1.5rem;
-    margin: 1.5rem auto;
+    padding: 1.5rem 1rem;
+    margin: 1rem auto;
     max-width: 600px;
     box-shadow: var(--shadow);
     border: 1.5px solid #222;
@@ -107,8 +107,8 @@ body.playing .card {
 }
 
 h1 {
-    margin-bottom: 1.5rem;
-    font-size: 2.5rem;
+    margin-bottom: 0.8rem;
+    font-size: 2.2rem;
     font-weight: 900;
     color: var(--primary);
     letter-spacing: -1px;
@@ -124,7 +124,7 @@ h1 {
 .version-meta {
     font-size: 0.8rem;
     color: #555;
-    margin-bottom: 2rem;
+    margin-bottom: 1rem;
     line-height: 1.4;
 }
 
@@ -233,8 +233,8 @@ input[type="range"]:focus::-moz-range-thumb {
 .beat-indicators {
     display: flex;
     justify-content: center;
-    gap: 2rem;
-    margin: 2.3rem auto 1.5rem;
+    gap: 1.5rem;
+    margin: 1.5rem auto 1rem;
 }
 
 .dot {
@@ -402,7 +402,7 @@ select {
     flex-wrap: wrap;
     justify-content: center;
     gap: 0.9rem;
-    margin-top: 2rem;
+    margin-top: 1rem;
 }
 
 .info-text {
