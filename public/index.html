@@ -9,7 +9,11 @@
 
 <body>
   <h1>Synced Metronome</h1>
-  <div class="version-display">v1.1.1</div>
+  <div class="version-display">v1.2.1</div>
+  <div class="version-meta">
+    <p>Last Modified: 2025-12-23</p>
+    <p>Developer: Hye Sung Moon</p>
+  </div>
   <div class="beat-indicators" id="beatDots"></div>
 
   <div class="card">
@@ -72,7 +76,7 @@
           <label for="subdivisionInput">Subdivision:</label>
           <select id="subdivisionInput">
             <option value="1">Quarter Note (1/4)</option>
-            <option value="2">Eighth Note (1/8)</option>
+            <option value="2" selected>Eighth Note (1/8)</option>
             <option value="3">Eighth Note Triplets</option>
             <option value="4">Sixteenth Note (1/16)</option>
           </select>
@@ -106,7 +110,7 @@
   let role = null;
   let timeOffset = 0;
   let tickTimer = null;
-  let subdivision = 1;
+  let subdivision = 2;
   let timeSignature = '4/4';
   let beatCount = 0;
   let syncTimeout = null;

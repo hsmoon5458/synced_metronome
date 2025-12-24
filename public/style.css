@@ -105,6 +105,19 @@ h1 {
     text-shadow: 0 2px 14px #ff980040, 0 1px 1px #000a;
 }
 
+.version-display {
+    font-size: 0.9rem;
+    color: #666;
+    margin-bottom: 0.5rem;
+}
+
+.version-meta {
+    font-size: 0.8rem;
+    color: #555;
+    margin-bottom: 2rem;
+    line-height: 1.4;
+}
+
 /* BPM Controls */
 .bpm-controls {
     display: flex;
@@ -155,11 +168,12 @@ h1 {
 }
 
 #bpmDisplay {
-    font-size: 3.5rem;
-    font-weight: 700;
+    font-size: 5rem;
+    font-weight: 800;
     color: var(--primary);
-    margin: 0.5rem 0;
-    text-shadow: 0 2px 8px #ff980040, 0 1px 0 #111;
+    margin: 0.2rem 0;
+    text-shadow: 0 2px 12px #ff980060, 0 1px 0 #111;
+    letter-spacing: -2px;
 }
 
 /* Custom Range Slider Styling */
@@ -416,12 +430,12 @@ select {
 
 .time-sig-visual {
     position: relative;
-    width: 44px;
-    height: 60px;
-    margin-bottom: 0.5rem;
+    width: 30px;
+    height: 42px;
+    margin-bottom: 0.3rem;
     background: #161616;
-    border-radius: 0.5rem;
-    box-shadow: 0 1px 6px #0006;
+    border-radius: 0.4rem;
+    box-shadow: 0 1px 4px #0006;
 }
 
 .time-sig-visual .numerator,
@@ -429,7 +443,7 @@ select {
     position: absolute;
     width: 100%;
     text-align: center;
-    font-size: 1.7rem;
+    font-size: 1.1rem;
     font-weight: bold;
     color: var(--primary);
 }
@@ -454,7 +468,8 @@ select {
 .subdiv-visual {
     display: flex;
     justify-content: center;
-    gap: 3px;
+    gap: 2px;
+    transform: scale(0.8);
 }
 
 .note {

@@ -13,7 +13,7 @@ const io = socketIO(server);
 let metronomeState = {
   bpm: 120,
   timeSignature: '4/4',
-  subdivision: 1,
+  subdivision: 2,
   startTime: null,
   isRunning: false
 };
