@@ -9,7 +9,7 @@
 
 <body>
   <h1>Synced Metronome</h1>
-  <div class="version-display">v1.0.3</div>
+  <div class="version-display">v1.0.4</div>
   <div class="beat-indicators" id="beatDots"></div>
 
   <div class="card">
@@ -172,22 +172,60 @@
     }
   });
 
-function enableWakeLockAndAudio() {
-  console.log("enableWakeLockAndAudio called. AudioContext state:", audioCtx.state, "NoSleep enabled:", noSleep.isEnabled);
-  if (audioCtx.state === 'suspended') {
-    audioCtx.resume().then(() => {
-      console.log("AudioContext resumed.");
-    }).catch(e => console.error("AudioContext resume error:", e));
+  let wakeLock = null;
+  let silentSource = null;
+
+  async function requestWakeLock() {
+    try {
+      if ('wakeLock' in navigator) {
+        wakeLock = await navigator.wakeLock.request('screen');
+        wakeLock.addEventListener('release', () => {
+          console.log('Wake Lock released');
+        });
+        console.log('Wake Lock active');
+      }
+    } catch (err) {
+      console.error(`${err.name}, ${err.message}`);
+    }
   }
-  // This is the key part for NoSleep:
-  if (!noSleep.isEnabled) {
-    noSleep.enable().then(() => {
-      console.log("Screen wake lock is active."); // You should see this in your console
-    }).catch(e => console.error("Failed to enable screen wake lock:", e));
+
+  function startSilentAudio() {
+    if (silentSource) return;
+    try {
+      const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate, audioCtx.sampleRate);
+      silentSource = audioCtx.createBufferSource();
+      silentSource.buffer = buffer;
+      silentSource.loop = true;
+      silentSource.connect(audioCtx.destination);
+      silentSource.start();
+      console.log('Silent audio started for active state');
+    } catch (e) {
+      console.error("Error starting silent audio:", e);
+    }
   }
-  document.body.removeEventListener('click', enableWakeLockAndAudio);
-  document.body.removeEventListener('touchstart', enableWakeLockAndAudio);
-}
+
+  function enableWakeLockAndAudio() {
+    console.log("enableWakeLockAndAudio called. AudioContext state:", audioCtx.state, "NoSleep enabled:", noSleep.isEnabled);
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume().then(() => {
+        console.log("AudioContext resumed.");
+        startSilentAudio();
+      }).catch(e => console.error("AudioContext resume error:", e));
+    } else {
+      startSilentAudio();
+    }
+    
+    requestWakeLock();
+
+    // This is the key part for NoSleep:
+    if (!noSleep.isEnabled) {
+      noSleep.enable().then(() => {
+        console.log("Screen wake lock is active."); // You should see this in your console
+      }).catch(e => console.error("Failed to enable screen wake lock:", e));
+    }
+    document.body.removeEventListener('click', enableWakeLockAndAudio);
+    document.body.removeEventListener('touchstart', enableWakeLockAndAudio);
+  }
 document.body.addEventListener('click', enableWakeLockAndAudio);
 document.body.addEventListener('touchstart', enableWakeLockAndAudio);
 
@@ -489,11 +527,18 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
     updateTimeSignatureVisual(ts);
     updateSubdivisionVisual(subdiv);
     updateBeatDots();
-    socket.emit('updateSettings', {
+    
+    const payload = {
       bpm,
       timeSignature: ts,
       subdivision: subdiv
-    });
+    };
+
+    if (isRunning) {
+      payload.startTime = globalNow();
+    }
+
+    socket.emit('updateSettings', payload);
   }
 
   document.getElementById("timeSigInput").addEventListener('change', function () {
@@ -509,6 +554,8 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
   function startMetronome() {
     if (role !== 'host') return;
     audioCtx.resume();
+    startSilentAudio();
+    requestWakeLock();
     startButton.disabled = true;
     if (!noSleep.isEnabled) { 
       noSleep.enable().catch(err => console.error('Failed to enable NoSleep on metronome start:', err));
