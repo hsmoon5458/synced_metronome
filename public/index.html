@@ -153,26 +153,18 @@
     bpmSlider.addEventListener('change', () => updateSliderFill(bpmSlider));
   }
 
-  // Handle visibility change to switch between RAF and setTimeout
-  document.addEventListener("visibilitychange", () => {
-    if (isRunning) {
-      // Cancel any existing loop to prevent duplicates
-      if (tickTimer) {
-        cancelAnimationFrame(tickTimer);
-        clearTimeout(tickTimer);
-      }
-      // Restart loop immediately
-      tickLoop();
-    }
-  });
   // Enable audio context on user interaction
-  const unlockAudio = () => {
+  document.body.addEventListener('click', () => {
     if (audioCtx.state === 'suspended') {
       audioCtx.resume();
     }
-  };
-  document.body.addEventListener('click', unlockAudio);
-  document.body.addEventListener('touchstart', unlockAudio);
+  });
+  // Enable audio context on user interaction
+  document.body.addEventListener('click', () => {
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+  });
 
   // Update BPM value display when slider changes
   bpmSlider.addEventListener('input', () => {
@@ -221,40 +213,13 @@
   function startSilentAudio() {
     if (silentSource) return;
     try {
-      // Use an oscillator for better background persistence (especially iOS)
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(440, audioCtx.currentTime); // Standard A4
-      
-      // Virtually silent gain, but not exactly 0 to trick aggressive power savers
-      gain.gain.setValueAtTime(0.0001, audioCtx.currentTime); 
-      
-      osc.connect(gain).connect(audioCtx.destination);
-      osc.start();
-      silentSource = osc; // Keep reference to prevent garbage collection
-      
-      console.log('Silent background oscillator started');
-      
-      // Update Media Session metadata to show in lock screen/control center
-      if ('mediaSession' in navigator) {
-        navigator.mediaSession.metadata = new MediaMetadata({
-          title: 'Synced Metronome',
-          artist: 'Click Sync',
-          album: 'Metronome Session',
-          artwork: [
-            { src: 'https://via.placeholder.com/512?text=Metronome', sizes: '512x512', type: 'image/png' }
-          ]
-        });
-
-        navigator.mediaSession.setActionHandler('play', () => {
-          if (audioCtx.state === 'suspended') audioCtx.resume();
-        });
-        navigator.mediaSession.setActionHandler('pause', () => {
-           // No-op to keep session active
-        });
-      }
+      const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate, audioCtx.sampleRate);
+      silentSource = audioCtx.createBufferSource();
+      silentSource.buffer = buffer;
+      silentSource.loop = true;
+      silentSource.connect(audioCtx.destination);
+      silentSource.start();
+      console.log('Silent audio started for active state');
     } catch (e) {
       console.error("Error starting silent audio:", e);
     }
@@ -498,46 +463,31 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
     if (!isRunning) return;
     try {
       const interval = (60 / bpm) / subdivision;
-      // Use performance.now() + offset for logic, but AudioContext time for scheduling
       const now = audioCtx.currentTime;
-      
       const [numerator, denominator] = timeSignature.split('/').map(Number);
       const ticksPerBar = numerator * subdivision;
-      
-      // Look ahead time (increase slightly for stability)
-      while (nextTick < now + 0.1) {
+      while (nextTick < now + 0.2) {
         const currentBeat = Math.floor(beatCount / subdivision);
         const isFirstBeat = (beatCount % ticksPerBar === 0);
         const isMainBeat = (beatCount % subdivision === 0);
-        
         scheduleClick(nextTick, isFirstBeat);
-        
-        // Visuals only update if visible (requestAnimationFrame pauses in background)
-        // This prevents the loop from crashing if RAF stops
-        if (document.visibilityState === 'visible' && isMainBeat) {
+        if (isMainBeat) {
           const visualBeat = currentBeat % numerator;
           requestAnimationFrame(() => {
             highlightDot(visualBeat);
             flashScreen(isFirstBeat);
           });
         }
-        
         nextTick += interval;
         beatCount++;
       }
-      
-      // Use setTimeout as a backup for requestAnimationFrame when in background
-      if (document.visibilityState === 'visible') {
-        tickTimer = requestAnimationFrame(tickLoop);
-      } else {
-        tickTimer = setTimeout(tickLoop, 25); // Check every 25ms in background
-      }
+      tickTimer = requestAnimationFrame(tickLoop);
     } catch (error) {
       console.error('Error in tick loop:', error);
       if (isRunning) {
         setTimeout(() => {
           if (isRunning) {
-             tickLoop(); // Try to restart immediately
+            tickTimer = requestAnimationFrame(tickLoop);
           }
         }, 1000);
       }
@@ -565,7 +515,6 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
     if (!isRunning && wasRunning) {
       if (tickTimer) {
         cancelAnimationFrame(tickTimer);
-        clearTimeout(tickTimer);
         tickTimer = null;
       }
       if (syncTimeout) {
@@ -706,9 +655,7 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
     isRunning = false;
     stopButton.disabled = true;
     if (tickTimer) {
-      // Clear both RAF and Timeout to be safe
       cancelAnimationFrame(tickTimer);
-      clearTimeout(tickTimer);
       tickTimer = null;
     }
     socket.emit('stopMetronome');
