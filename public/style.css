@@ -17,6 +17,16 @@ body {
     transition: background 0.5s, color 0.5s;
 }
 
+body.flash {
+    background-color: #333 !important;
+    transition: background-color 0.05s;
+}
+
+body.flash-accent {
+    background-color: #553300 !important;
+    transition: background-color 0.05s;
+}
+
 body.playing {
     background: #231709;
 }
