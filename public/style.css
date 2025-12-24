@@ -416,6 +416,22 @@ select {
     margin-top: 1rem;
 }
 
+/* Landing page button stack */
+#roleChooser .button-group {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1rem;
+    max-width: 300px;
+    margin: 1.5rem auto 0.5rem;
+}
+
+#roleChooser button {
+    width: 100%;
+    margin: 0;
+    padding: 1rem;
+    font-size: 1.2rem;
+}
+
 .info-text {
     font-size: 1.12rem;
     font-weight: 500;
