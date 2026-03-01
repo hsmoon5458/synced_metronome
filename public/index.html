@@ -11,7 +11,7 @@
   <h1>Synced Metronome</h1>
   <div class="version-display" id="versionDisplay">v...</div>
   <div class="version-meta">
-    <p>Last Modified: 2025-12-24</p>
+    <p>Last Modified: 2026-02-28</p>
     <p>Developer: Hye Sung Moon</p>
   </div>
   <div class="beat-indicators" id="beatDots"></div>
@@ -112,6 +112,10 @@
   let timeSignature = '4/4';
   let beatCount = 0;
   let syncTimeout = null;
+  let timeSynced = false;
+  let isSyncing = false;
+  let lastDriftCheck = 0;
+  let reSyncInterval = null;
 
   // DOM Elements
   const metronomeControls = document.getElementById('metronomeControls');
@@ -351,12 +355,15 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
   }
 
   // Synchronize time with server
-  async function syncTime() {
+  async function syncTime(silent = false) {
+    if (isSyncing) return timeSynced;
+    isSyncing = true;
     const samples = [];
-    document.getElementById('latencyDisplay').textContent = 'Syncing with server...';
+    if (!silent) {
+      document.getElementById('latencyDisplay').textContent = 'Syncing with server...';
+    }
     
     try {
-      // Take more samples for better accuracy
       for (let i = 0; i < 16; i++) {
         const t0 = performance.now();
         const res = await fetch('/time');
@@ -364,37 +371,37 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
         const json = await res.json();
         const roundTrip = t1 - t0;
         
-        // Calculate offset assuming symmetric latency
         const serverTime = json.serverTime + (roundTrip / 2);
         const offset = serverTime - Date.now();
         
         samples.push({ roundTrip, offset });
         
-        // Random jitter to avoid lock-step issues
         await new Promise(r => setTimeout(r, 50 + Math.random() * 50));
       }
 
-      // Sort by round trip time to find best samples (lowest latency)
       samples.sort((a, b) => a.roundTrip - b.roundTrip);
       
-      // Use the best 50% of samples (lowest RTT) to filter out network spikes
       const bestSamples = samples.slice(0, Math.floor(samples.length / 2));
       
-      // Calculate average offset from best samples
-      // We can also use median, but average of best samples is robust enough
       const sumOffset = bestSamples.reduce((acc, s) => acc + s.offset, 0);
       timeOffset = Math.round(sumOffset / bestSamples.length);
+      timeSynced = true;
       
-      // Calculate average latency from best samples for display
       const avgLatency = Math.round(bestSamples.reduce((acc, s) => acc + s.roundTrip, 0) / bestSamples.length);
       
-      document.getElementById('latencyDisplay').textContent = `Avg Latency: ~${avgLatency}ms`;
+      if (!silent) {
+        document.getElementById('latencyDisplay').textContent = `Avg Latency: ~${avgLatency}ms`;
+      }
       console.log('Sync complete. Time offset:', timeOffset, 'Avg Latency:', avgLatency, 'Best samples:', bestSamples);
       return true;
     } catch (error) {
       console.error('Failed to sync time:', error);
-      document.getElementById('latencyDisplay').textContent = 'Time sync failed. Please refresh.';
+      if (!silent) {
+        document.getElementById('latencyDisplay').textContent = 'Time sync failed. Please refresh.';
+      }
       return false;
+    } finally {
+      isSyncing = false;
     }
   }
 
@@ -434,7 +441,27 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
       const now = audioCtx.currentTime;
       const [numerator, denominator] = timeSignature.split('/').map(Number);
       const ticksPerBar = numerator * subdivision;
-      while (nextTick < now + 0.2) {
+
+      // Re-anchor timing to server clock every ~2s to correct drift
+      // between audioCtx.currentTime (hardware clock) and Date.now() (system clock)
+      if (now - lastDriftCheck > 2.0 && startTime && timeSynced) {
+        lastDriftCheck = now;
+        const serverNow = globalNow();
+        const intervalMs = (60000 / bpm) / subdivision;
+        const elapsedMs = serverNow - startTime;
+        const expectedBeat = Math.floor(elapsedMs / intervalMs);
+        const expectedNextTickMs = startTime + (expectedBeat + 1) * intervalMs;
+        const hardwareLatency = (audioCtx.outputLatency || 0) + (audioCtx.baseLatency || 0);
+        const expectedNextTickAudio = now + (expectedNextTickMs - serverNow) / 1000 - hardwareLatency;
+        const drift = nextTick - expectedNextTickAudio;
+        if (Math.abs(drift) > 0.005) {
+          console.log(`Drift correction: ${(drift * 1000).toFixed(1)}ms`);
+          nextTick = expectedNextTickAudio;
+          beatCount = expectedBeat + 1;
+        }
+      }
+
+      while (nextTick < now + 0.3) {
         const currentBeat = Math.floor(beatCount / subdivision);
         const isFirstBeat = (beatCount % ticksPerBar === 0);
         const isMainBeat = (beatCount % subdivision === 0);
@@ -449,14 +476,12 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
         nextTick += interval;
         beatCount++;
       }
-      tickTimer = requestAnimationFrame(tickLoop);
+      tickTimer = setTimeout(tickLoop, 25);
     } catch (error) {
       console.error('Error in tick loop:', error);
       if (isRunning) {
-        setTimeout(() => {
-          if (isRunning) {
-            tickTimer = requestAnimationFrame(tickLoop);
-          }
+        tickTimer = setTimeout(() => {
+          if (isRunning) tickLoop();
         }, 1000);
       }
     }
@@ -482,7 +507,7 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
     }
     if (!isRunning && wasRunning) {
       if (tickTimer) {
-        cancelAnimationFrame(tickTimer);
+        clearTimeout(tickTimer);
         tickTimer = null;
       }
       if (syncTimeout) {
@@ -494,9 +519,10 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
     }
     if (isRunning && data.startTime) {
       if (wasRunning && tickTimer) {
-        cancelAnimationFrame(tickTimer);
+        clearTimeout(tickTimer);
         tickTimer = null;
       }
+      if (!timeSynced) return;
       startTime = data.startTime;
       startMetronomeSync();
     }
@@ -529,6 +555,7 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
         
         // Set nextTick anchor based on the math, not "now"
         nextTick = audioCtx.currentTime + delaySec - hardwareLatency;
+        lastDriftCheck = audioCtx.currentTime;
         
         const clampedDelay = Math.max(0, Math.min(1000, delayMs));
         
@@ -548,6 +575,35 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
   }
 
   socket.on('sync', syncClock);
+
+  // Re-sync when tab becomes visible again (handles background tab drift)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && isRunning && startTime && timeSynced) {
+      syncTime(true).then(() => {
+        if (isRunning && startTime) {
+          if (tickTimer) {
+            clearTimeout(tickTimer);
+            tickTimer = null;
+          }
+          startMetronomeSync();
+        }
+      });
+    }
+  });
+
+  function startPeriodicReSync() {
+    stopPeriodicReSync();
+    reSyncInterval = setInterval(() => {
+      if (timeSynced) syncTime(true);
+    }, 30000);
+  }
+
+  function stopPeriodicReSync() {
+    if (reSyncInterval) {
+      clearInterval(reSyncInterval);
+      reSyncInterval = null;
+    }
+  }
 
   socket.on('clientCount', (count) => {
     const connectedCount = count - 1;
@@ -623,7 +679,7 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
     isRunning = false;
     stopButton.disabled = true;
     if (tickTimer) {
-      cancelAnimationFrame(tickTimer);
+      clearTimeout(tickTimer);
       tickTimer = null;
     }
     // clear highlight immediately
@@ -646,6 +702,7 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
     syncTime().then((success) => {
       if (success) {
         socket.emit('identify', r);
+        startPeriodicReSync();
       }
     });
   }
