@@ -11,7 +11,7 @@
   <h1>Synced Metronome</h1>
   <div class="version-display" id="versionDisplay">v...</div>
   <div class="version-meta">
-    <p>Last Modified: 2026-02-28</p>
+    <p>Last Modified: 2026-04-06</p>
     <p>Developer: Hye Sung Moon</p>
   </div>
   <div class="beat-indicators" id="beatDots"></div>
@@ -444,7 +444,8 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
 
       // Re-anchor timing to server clock every ~2s to correct drift
       // between audioCtx.currentTime (hardware clock) and Date.now() (system clock)
-      if (now - lastDriftCheck > 2.0 && startTime && timeSynced) {
+      // Host is the timing anchor — only clients need drift correction
+      if (role !== 'host' && now - lastDriftCheck > 2.0 && startTime && timeSynced) {
         lastDriftCheck = now;
         const serverNow = globalNow();
         const intervalMs = (60000 / bpm) / subdivision;
@@ -578,7 +579,8 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
 
   // Re-sync when tab becomes visible again (handles background tab drift)
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && isRunning && startTime && timeSynced) {
+    // Only clients re-sync on tab visibility — host is the timing anchor
+    if (role !== 'host' && document.visibilityState === 'visible' && isRunning && startTime && timeSynced) {
       syncTime(true).then(() => {
         if (isRunning && startTime) {
           if (tickTimer) {
@@ -592,6 +594,8 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
   });
 
   function startPeriodicReSync() {
+    // Host is the timing anchor — no periodic re-sync needed
+    if (role === 'host') return;
     stopPeriodicReSync();
     reSyncInterval = setInterval(() => {
       if (timeSynced) syncTime(true);
