@@ -160,12 +160,6 @@
       audioCtx.resume();
     }
   });
-  // Enable audio context on user interaction
-  document.body.addEventListener('click', () => {
-    if (audioCtx.state === 'suspended') {
-      audioCtx.resume();
-    }
-  });
 
   // Update BPM value display when slider changes
   bpmSlider.addEventListener('input', () => {
@@ -409,13 +403,29 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
     return Date.now() + timeOffset;
   }
 
+  // Pre-build noise buffers to avoid per-tick allocations
+  const clickBuffers = { normal: null, accent: null };
+  function buildClickBuffers() {
+    const normalLen = 0.05;
+    const accentLen = 0.08;
+    const normalBuf = audioCtx.createBuffer(1, audioCtx.sampleRate * normalLen, audioCtx.sampleRate);
+    const normalData = normalBuf.getChannelData(0);
+    for (let i = 0; i < normalData.length; i++) {
+      normalData[i] = (Math.random() * 2 - 1) * Math.exp(-i / 200);
+    }
+    const accentBuf = audioCtx.createBuffer(1, audioCtx.sampleRate * accentLen, audioCtx.sampleRate);
+    const accentData = accentBuf.getChannelData(0);
+    for (let i = 0; i < accentData.length; i++) {
+      accentData[i] = (Math.random() * 2 - 1) * Math.exp(-i / 140);
+    }
+    clickBuffers.normal = normalBuf;
+    clickBuffers.accent = accentBuf;
+  }
+  buildClickBuffers();
+
   function scheduleClick(time, isAccent = false) {
     const noiseLength = isAccent ? 0.08 : 0.05;
-    const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate * noiseLength, audioCtx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < data.length; i++) {
-      data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (isAccent ? 140 : 200));
-    }
+    const buffer = isAccent ? clickBuffers.accent : clickBuffers.normal;
     const noise = audioCtx.createBufferSource();
     noise.buffer = buffer;
     const gain = audioCtx.createGain();
@@ -610,10 +620,20 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
   }
 
   socket.on('clientCount', (count) => {
-    const connectedCount = count - 1;
-    document.getElementById("statusDisplay").textContent = connectedCount === 1
-      ? `1 client connected`
-      : `${connectedCount} clients connected`;
+    const otherCount = count - 1;
+    document.getElementById("statusDisplay").textContent = otherCount === 1
+      ? `1 other device connected`
+      : `${otherCount} other devices connected`;
+  });
+
+  // Re-identify role and re-sync on socket reconnection
+  socket.on('connect', () => {
+    if (role) {
+      socket.emit('identify', role);
+      if (role !== 'host') {
+        syncTime(true);
+      }
+    }
   });
 
   socket.on('hostAvailability', (isAvailable) => {
