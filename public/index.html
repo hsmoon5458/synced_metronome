@@ -161,13 +161,6 @@
     bpmSlider.addEventListener('change', () => updateSliderFill(bpmSlider));
   }
 
-  // Enable audio context on user interaction
-  document.body.addEventListener('click', () => {
-    if (audioCtx.state === 'suspended') {
-      audioCtx.resume();
-    }
-  });
-
   // Update BPM value display when slider changes
   bpmSlider.addEventListener('input', () => {
     bpm = parseInt(bpmSlider.value);
@@ -199,16 +192,26 @@
   let silentSource = null;
 
   async function requestWakeLock() {
+    // Release existing lock before re-acquiring
+    if (wakeLock) {
+      try { await wakeLock.release(); } catch (e) { /* ignore */ }
+      wakeLock = null;
+    }
     try {
       if ('wakeLock' in navigator) {
         wakeLock = await navigator.wakeLock.request('screen');
-        wakeLock.addEventListener('release', () => {
-          console.log('Wake Lock released');
-        });
         console.log('Wake Lock active');
       }
     } catch (err) {
-      console.error(`${err.name}, ${err.message}`);
+      console.error(`Wake Lock failed: ${err.name}, ${err.message}`);
+    }
+  }
+
+  async function releaseWakeLock() {
+    if (wakeLock) {
+      try { await wakeLock.release(); } catch (e) { /* ignore */ }
+      wakeLock = null;
+      console.log('Wake Lock released');
     }
   }
 
@@ -221,36 +224,45 @@
       silentSource.loop = true;
       silentSource.connect(audioCtx.destination);
       silentSource.start();
-      console.log('Silent audio started for active state');
     } catch (e) {
       console.error("Error starting silent audio:", e);
     }
   }
 
-  function enableWakeLockAndAudio() {
-    console.log("enableWakeLockAndAudio called. AudioContext state:", audioCtx.state, "NoSleep enabled:", noSleep.isEnabled);
-    if (audioCtx.state === 'suspended') {
-      audioCtx.resume().then(() => {
-        console.log("AudioContext resumed.");
-        startSilentAudio();
-      }).catch(e => console.error("AudioContext resume error:", e));
-    } else {
-      startSilentAudio();
+  function stopSilentAudio() {
+    if (silentSource) {
+      try { silentSource.stop(); } catch (e) { /* ignore */ }
+      silentSource = null;
     }
-    
-    requestWakeLock();
-
-    // This is the key part for NoSleep:
-    if (!noSleep.isEnabled) {
-      noSleep.enable().then(() => {
-        console.log("Screen wake lock is active."); // You should see this in your console
-      }).catch(e => console.error("Failed to enable screen wake lock:", e));
-    }
-    document.body.removeEventListener('click', enableWakeLockAndAudio);
-    document.body.removeEventListener('touchstart', enableWakeLockAndAudio);
   }
-document.body.addEventListener('click', enableWakeLockAndAudio);
-document.body.addEventListener('touchstart', enableWakeLockAndAudio);
+
+  // Acquire all screen-wake mechanisms (called when playback starts)
+  function acquireScreenWake() {
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume().catch(e => console.error("AudioContext resume error:", e));
+    }
+    startSilentAudio();
+    requestWakeLock();
+    if (!noSleep.isEnabled) {
+      noSleep.enable().catch(e => console.error("Failed to enable NoSleep:", e));
+    }
+  }
+
+  // Release all screen-wake mechanisms (called when playback stops)
+  function releaseScreenWake() {
+    stopSilentAudio();
+    releaseWakeLock();
+    if (noSleep.isEnabled) {
+      noSleep.disable();
+    }
+  }
+
+  // Resume AudioContext on first user interaction
+  document.body.addEventListener('click', () => {
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+  }, { once: true });
 
   // Update time signature visual display
   function updateTimeSignatureVisual(ts) {
@@ -533,6 +545,7 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
         syncTimeout = null;
       }
       document.querySelectorAll('.dot').forEach(dot => dot.classList.remove('active'));
+      releaseScreenWake();
       return;
     }
     if (isRunning && data.startTime) {
@@ -541,6 +554,7 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
         tickTimer = null;
       }
       if (!timeSynced) return;
+      acquireScreenWake();
       startTime = data.startTime;
       startMetronomeSync();
     }
@@ -594,19 +608,25 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
 
   socket.on('sync', syncClock);
 
-  // Re-sync when tab becomes visible again (handles background tab drift)
+  // Handle tab visibility changes
   document.addEventListener('visibilitychange', () => {
-    // Only clients re-sync on tab visibility — host is the timing anchor
-    if (role !== 'host' && document.visibilityState === 'visible' && isRunning && startTime && timeSynced) {
-      syncTime(true).then(() => {
-        if (isRunning && startTime) {
-          if (tickTimer) {
-            clearTimeout(tickTimer);
-            tickTimer = null;
+    if (document.visibilityState === 'visible') {
+      // Re-acquire wake lock (it releases when tab goes to background)
+      if (isRunning) {
+        requestWakeLock();
+      }
+      // Only clients re-sync on tab visibility — host is the timing anchor
+      if (role !== 'host' && isRunning && startTime && timeSynced) {
+        syncTime(true).then(() => {
+          if (isRunning && startTime) {
+            if (tickTimer) {
+              clearTimeout(tickTimer);
+              tickTimer = null;
+            }
+            startMetronomeSync();
           }
-          startMetronomeSync();
-        }
-      });
+        });
+      }
     }
   });
 
@@ -708,13 +728,8 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
 
   function startMetronome() {
     if (role !== 'host') return;
-    audioCtx.resume();
-    startSilentAudio();
-    requestWakeLock();
+    acquireScreenWake();
     startButton.disabled = true;
-    if (!noSleep.isEnabled) { 
-      noSleep.enable().catch(err => console.error('Failed to enable NoSleep on metronome start:', err));
-    }
     socket.emit('startMetronome');
   }
 
@@ -726,8 +741,8 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
       clearTimeout(tickTimer);
       tickTimer = null;
     }
-    // clear highlight immediately
     document.querySelectorAll('.dot').forEach(dot => dot.classList.remove('active'));
+    releaseScreenWake();
     socket.emit('stopMetronome');
   }
 
