@@ -4,6 +4,9 @@
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Synced Metronome</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 
@@ -14,13 +17,17 @@
     <p>Last Modified: 2026-04-06</p>
     <p>Developer: Hye Sung Moon</p>
   </div>
+  <div class="connection-status" id="connectionStatus">
+    <span class="connection-dot" id="connectionDot"></span>
+    <span id="connectionLabel">Connecting...</span>
+  </div>
   <div class="beat-indicators" id="beatDots"></div>
 
   <div class="card">
     <div id="roleChooser">
       <div class="button-group">
-        <button id="btnChooseHost" onclick="setRole('host')">Host</button>
-        <button id="btnChooseClient" onclick="setRole('client')">Follow</button>
+        <button id="btnChooseHost" onclick="setRole('host')">Host<span class="role-desc">Control the session</span></button>
+        <button id="btnChooseClient" onclick="setRole('client')">Follow<span class="role-desc">Join and listen</span></button>
       </div>
       <p id="hostTakenMsg" style="display:none; color:#d32f2f; margin-top:0.5rem; font-size:0.9rem;">Host role is currently occupied.</p>
     </div>
@@ -626,8 +633,17 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
       : `${otherCount} other devices connected`;
   });
 
+  // Connection status indicator
+  function updateConnectionStatus(connected) {
+    const dot = document.getElementById('connectionDot');
+    const label = document.getElementById('connectionLabel');
+    dot.className = 'connection-dot ' + (connected ? 'connected' : 'disconnected');
+    label.textContent = connected ? 'Connected' : 'Reconnecting...';
+  }
+
   // Re-identify role and re-sync on socket reconnection
   socket.on('connect', () => {
+    updateConnectionStatus(true);
     if (role) {
       socket.emit('identify', role);
       if (role !== 'host') {
@@ -636,17 +652,21 @@ document.body.addEventListener('touchstart', enableWakeLockAndAudio);
     }
   });
 
+  socket.on('disconnect', () => {
+    updateConnectionStatus(false);
+  });
+
   socket.on('hostAvailability', (isAvailable) => {
     if (role) return; // Only update if still in role selection screen
     
     if (isAvailable) {
       btnChooseHost.disabled = false;
-      btnChooseHost.textContent = "Host";
+      btnChooseHost.innerHTML = 'Host<span class="role-desc">Control the session</span>';
       btnChooseHost.title = "";
       hostTakenMsg.style.display = 'none';
     } else {
       btnChooseHost.disabled = true;
-      btnChooseHost.textContent = "Host (Occupied)";
+      btnChooseHost.innerHTML = 'Host (Occupied)<span class="role-desc">Another user is hosting</span>';
       btnChooseHost.title = "Another user is already the host";
       hostTakenMsg.style.display = 'block';
     }
