@@ -1,0 +1,15 @@
+## Xcode
+xcuserdata/
+*.xcscmblueprint
+*.xccheckout
+DerivedData/
+build/
+
+## Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+SyncedMetronome.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+
+## macOS
+.DS_Store

@@ -1,0 +1,28 @@
+name: SyncedMetronome
+options:
+  bundleIdPrefix: com.hyesungmoon
+  deploymentTarget:
+    iOS: "16.0"
+  xcodeVersion: "15.0"
+packages:
+  SocketIO:
+    url: https://github.com/socketio/socket.io-client-swift
+    from: "16.1.1"
+targets:
+  SyncedMetronome:
+    type: application
+    platform: iOS
+    sources:
+      - SyncedMetronome
+    settings:
+      base:
+        INFOPLIST_FILE: SyncedMetronome/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.hyesungmoon.SyncedMetronome
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.9"
+        TARGETED_DEVICE_FAMILY: "1"
+        IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+    dependencies:
+      - package: SocketIO
+        product: SocketIO
