@@ -14,7 +14,7 @@
   <h1>Synced Metronome</h1>
   <div class="version-display" id="versionDisplay">v...</div>
   <div class="version-meta">
-    <p>Last Modified: 2026-04-06</p>
+    <p>Last Modified: 2026-07-22</p>
     <p>Developer: Hye Sung Moon</p>
   </div>
   <div class="connection-status" id="connectionStatus">
@@ -113,7 +113,6 @@
   let startTime = null;
   let nextTick = 0;
   let role = null;
-  let timeOffset = 0;
   let tickTimer = null;
   let subdivision = 2;
   let timeSignature = '4/4';
@@ -367,59 +366,129 @@
     updateTimeout = setTimeout(updateSettings, 300);
   }
 
-  // Synchronize time with server
+  // ---------------------------------------------------------------------------
+  // Disciplined clock
+  //
+  // We model the mapping from the local clock to the server clock as a line:
+  //   serverTime ≈ localTime + intercept + slope * (localTime - refLocal)
+  // `intercept` corrects the constant offset; `slope` corrects the *rate*
+  // difference (clock skew) so we stop chasing drift between syncs. Samples
+  // come from a 4-timestamp round-trip and are weighted by measured network
+  // delay — high-delay (asymmetric/jittery) samples are discarded.
+  // ---------------------------------------------------------------------------
+  const MAX_CLOCK_SAMPLES = 60;
+  let clockSamples = [];       // { local, server, delay }
+  let clockRefLocal = null;    // fixed anchor (first sample's local time)
+  let clockIntercept = 0;      // (server - local) at refLocal, in ms
+  let clockSlope = 0;          // change in (server - local) per ms of local time
+
+  function addClockSample(local, server, delay) {
+    if (clockRefLocal === null) clockRefLocal = local;
+    clockSamples.push({ local, server, delay });
+    if (clockSamples.length > MAX_CLOCK_SAMPLES) clockSamples.shift();
+    recomputeClock();
+  }
+
+  function recomputeClock() {
+    if (clockSamples.length === 0) return;
+    // Keep the lowest-delay half of samples (min 4) — closest to symmetric.
+    const sorted = [...clockSamples].sort((a, b) => a.delay - b.delay);
+    const keep = sorted.slice(0, Math.max(4, Math.ceil(sorted.length / 2)));
+    const n = keep.length;
+
+    const xs = keep.map(s => s.local - clockRefLocal);   // local time since anchor
+    const ys = keep.map(s => s.server - s.local);        // offset at that time
+    const meanX = xs.reduce((a, b) => a + b, 0) / n;
+    const meanY = ys.reduce((a, b) => a + b, 0) / n;
+
+    let num = 0, den = 0;
+    for (let i = 0; i < n; i++) {
+      num += (xs[i] - meanX) * (ys[i] - meanY);
+      den += (xs[i] - meanX) ** 2;
+    }
+    const span = Math.max(...xs) - Math.min(...xs);
+
+    // Only trust a skew estimate once samples span enough wall-clock time and
+    // we have enough of them; otherwise a short burst would fit noise as slope.
+    if (den > 0 && span > 20000 && n >= 8) {
+      clockSlope = Math.max(-5e-4, Math.min(5e-4, num / den)); // clamp to ±500ppm
+      clockIntercept = meanY - clockSlope * meanX;
+    } else {
+      clockSlope = 0;
+      clockIntercept = meanY;
+    }
+    timeSynced = true;
+  }
+
+  // One round-trip. Resolves to a sample, or null on timeout/failure.
+  function pingServerTime(timeoutMs = 3000) {
+    return new Promise((resolve) => {
+      const t0 = Date.now();
+      let done = false;
+      const timer = setTimeout(() => { if (!done) { done = true; resolve(null); } }, timeoutMs);
+      socket.emit('timeSync', { t0 }, (resp) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        const t3 = Date.now();
+        if (!resp || typeof resp.t1 !== 'number' || typeof resp.t2 !== 'number') {
+          return resolve(null);
+        }
+        // NTP: offset = ((t1 - t0) + (t2 - t3)) / 2, delay = (t3 - t0) - (t2 - t1)
+        const offset = ((resp.t1 - t0) + (resp.t2 - t3)) / 2;
+        const delay = (t3 - t0) - (resp.t2 - resp.t1);
+        const localMid = (t0 + t3) / 2;
+        resolve({ local: localMid, server: localMid + offset, delay: Math.max(0, delay) });
+      });
+    });
+  }
+
+  // Collect a burst of samples and fold them into the disciplined clock.
   async function syncTime(silent = false) {
     if (isSyncing) return timeSynced;
     isSyncing = true;
-    const samples = [];
     if (!silent) {
       document.getElementById('latencyDisplay').textContent = 'Syncing with server...';
     }
-    
     try {
-      for (let i = 0; i < 16; i++) {
-        const t0 = performance.now();
-        const res = await fetch('/time');
-        const t1 = performance.now();
-        const json = await res.json();
-        const roundTrip = t1 - t0;
-        
-        const serverTime = json.serverTime + (roundTrip / 2);
-        const offset = serverTime - Date.now();
-        
-        samples.push({ roundTrip, offset });
-        
-        await new Promise(r => setTimeout(r, 50 + Math.random() * 50));
+      const burst = timeSynced ? 6 : 16; // fewer probes on periodic re-sync
+      let good = 0;
+      for (let i = 0; i < burst; i++) {
+        const s = await pingServerTime();
+        if (s) { addClockSample(s.local, s.server, s.delay); good++; }
+        await new Promise(r => setTimeout(r, 40 + Math.random() * 40));
       }
 
-      samples.sort((a, b) => a.roundTrip - b.roundTrip);
-      
-      const bestSamples = samples.slice(0, Math.floor(samples.length / 2));
-      
-      const sumOffset = bestSamples.reduce((acc, s) => acc + s.offset, 0);
-      timeOffset = Math.round(sumOffset / bestSamples.length);
-      timeSynced = true;
-      
-      const avgLatency = Math.round(bestSamples.reduce((acc, s) => acc + s.roundTrip, 0) / bestSamples.length);
-      
-      if (!silent) {
-        document.getElementById('latencyDisplay').textContent = `Avg Latency: ~${avgLatency}ms`;
+      if (good === 0) {
+        if (!silent && !timeSynced) {
+          document.getElementById('latencyDisplay').textContent = 'Time sync failed. Please refresh.';
+        }
+        return timeSynced;
       }
-      console.log('Sync complete. Time offset:', timeOffset, 'Avg Latency:', avgLatency, 'Best samples:', bestSamples);
+
+      const oneWay = Math.round(Math.min(...clockSamples.map(s => s.delay)) / 2);
+      if (!silent) {
+        document.getElementById('latencyDisplay').textContent =
+          `Sync ~${Math.max(0, oneWay)}ms${clockSlope ? ' · drift-corrected' : ''}`;
+      }
+      console.log('Sync complete. intercept:', Math.round(clockIntercept),
+        'ms, slope:', clockSlope.toExponential(2), 'best one-way:', oneWay, 'ms');
       return true;
     } catch (error) {
       console.error('Failed to sync time:', error);
-      if (!silent) {
+      if (!silent && !timeSynced) {
         document.getElementById('latencyDisplay').textContent = 'Time sync failed. Please refresh.';
       }
-      return false;
+      return timeSynced;
     } finally {
       isSyncing = false;
     }
   }
 
   function globalNow() {
-    return Date.now() + timeOffset;
+    if (clockRefLocal === null) return Date.now();
+    const now = Date.now();
+    return now + clockIntercept + clockSlope * (now - clockRefLocal);
   }
 
   // Pre-build noise buffers to avoid per-tick allocations
@@ -471,10 +540,11 @@
       const [numerator, denominator] = timeSignature.split('/').map(Number);
       const ticksPerBar = numerator * subdivision;
 
-      // Re-anchor timing to server clock every ~2s to correct drift
-      // between audioCtx.currentTime (hardware clock) and Date.now() (system clock)
-      // Host is the timing anchor — only clients need drift correction
-      if (role !== 'host' && now - lastDriftCheck > 2.0 && startTime && timeSynced) {
+      // Re-anchor timing to the server clock every ~2s. This corrects drift
+      // between audioCtx.currentTime (audio hardware clock) and the disciplined
+      // server clock. Host and clients both anchor to the server so they stay
+      // mutually aligned (the host is NOT a self-referential anchor).
+      if (now - lastDriftCheck > 2.0 && startTime && timeSynced) {
         lastDriftCheck = now;
         const serverNow = globalNow();
         const intervalMs = (60000 / bpm) / subdivision;
@@ -484,10 +554,14 @@
         const hardwareLatency = (audioCtx.outputLatency || 0) + (audioCtx.baseLatency || 0);
         const expectedNextTickAudio = now + (expectedNextTickMs - serverNow) / 1000 - hardwareLatency;
         const drift = nextTick - expectedNextTickAudio;
-        if (Math.abs(drift) > 0.005) {
-          console.log(`Drift correction: ${(drift * 1000).toFixed(1)}ms`);
+        if (Math.abs(drift) > 0.05) {
+          // Large drift (tab was throttled / audio glitch): hard re-anchor.
+          console.log(`Hard re-anchor: ${(drift * 1000).toFixed(1)}ms`);
           nextTick = expectedNextTickAudio;
           beatCount = expectedBeat + 1;
+        } else if (Math.abs(drift) > 0.002) {
+          // Small drift: slew gently toward target to avoid an audible jump.
+          nextTick -= drift * 0.3;
         }
       }
 
@@ -615,8 +689,8 @@
       if (isRunning) {
         requestWakeLock();
       }
-      // Only clients re-sync on tab visibility — host is the timing anchor
-      if (role !== 'host' && isRunning && startTime && timeSynced) {
+      // Host and clients both re-sync on tab visibility — both anchor to server
+      if (isRunning && startTime && timeSynced) {
         syncTime(true).then(() => {
           if (isRunning && startTime) {
             if (tickTimer) {
@@ -631,8 +705,8 @@
   });
 
   function startPeriodicReSync() {
-    // Host is the timing anchor — no periodic re-sync needed
-    if (role === 'host') return;
+    // Host and clients both re-sync periodically so the disciplined clock can
+    // refine its skew estimate and keep everyone locked to the server clock.
     stopPeriodicReSync();
     reSyncInterval = setInterval(() => {
       if (timeSynced) syncTime(true);
@@ -666,9 +740,9 @@
     updateConnectionStatus(true);
     if (role) {
       socket.emit('identify', role);
-      if (role !== 'host') {
-        syncTime(true);
-      }
+      // Re-sync on reconnect for both roles — the socket (and thus the sync
+      // round-trip path) is new, so refresh the clock estimate.
+      syncTime(true);
     }
   });
 

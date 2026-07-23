@@ -31,7 +31,9 @@ app.get('/version', (req, res) => {
   res.json({ version: packageJson.version });
 });
 
-// Time synchronization endpoint
+// Legacy HTTP time endpoint (kept for compatibility; clients now use the
+// socket.io `timeSync` round-trip below, which is lower-jitter and yields a
+// per-sample network delay estimate).
 app.get('/time', (req, res) => {
   res.json({ serverTime: Date.now() });
 });
@@ -55,6 +57,16 @@ io.on('connection', (socket) => {
     isRunning: metronomeState.isRunning,
     timeSignature: metronomeState.timeSignature,
     subdivision: metronomeState.subdivision
+  });
+
+  // Time synchronization round-trip (NTP-style, 4 timestamps).
+  // Client sends t0 (its send time); we stamp t1 on receive and t2 on send.
+  // Client stamps t3 on receipt and computes offset + delay from all four.
+  socket.on('timeSync', (data, callback) => {
+    const t1 = Date.now();
+    if (typeof callback === 'function') {
+      callback({ t0: data && data.t0, t1, t2: Date.now() });
+    }
   });
 
   // Handle role identification
