@@ -14,7 +14,7 @@
   <h1>Synced Metronome</h1>
   <div class="version-display" id="versionDisplay">v...</div>
   <div class="version-meta">
-    <p>Last Modified: 2026-07-22</p>
+    <p>Last Modified: 2026-07-23</p>
     <p>Developer: Hye Sung Moon</p>
   </div>
   <div class="connection-status" id="connectionStatus">
@@ -30,6 +30,11 @@
         <button id="btnChooseClient" onclick="setRole('client')">Follow<span class="role-desc">Join and listen</span></button>
       </div>
       <p id="hostTakenMsg" style="display:none; color:#d32f2f; margin-top:0.5rem; font-size:0.9rem;">Host role is currently occupied.</p>
+      <div id="qrJoin">
+        <div id="qrCode"></div>
+        <p class="qr-label">Scan to join on another device</p>
+        <p class="qr-url" id="qrUrl"></p>
+      </div>
     </div>
 
     <div id="metronomeControls" style="display:none;">
@@ -102,6 +107,7 @@
 
 <script src="/socket.io/socket.io.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/nosleep/0.12.0/NoSleep.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
 <script>
   const socket = io();
@@ -143,6 +149,31 @@
       document.getElementById('versionDisplay').textContent = `v${data.version}`;
     })
     .catch(err => console.error('Failed to fetch version:', err));
+
+  // Render a QR code (home screen) pointing at this live URL so other phones
+  // can scan to join the session. Uses window.location so it's always correct
+  // for wherever the app is actually served.
+  (function renderJoinQR() {
+    const joinUrl = window.location.href.split('#')[0];
+    const urlEl = document.getElementById('qrUrl');
+    if (urlEl) urlEl.textContent = joinUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
+    const target = document.getElementById('qrCode');
+    if (target && typeof QRCode !== 'undefined') {
+      new QRCode(target, {
+        text: joinUrl,
+        width: 168,
+        height: 168,
+        colorDark: '#0e0e10',
+        colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.M
+      });
+    } else if (target) {
+      // QR library failed to load (offline / CDN blocked) — hide the block.
+      const wrap = document.getElementById('qrJoin');
+      if (wrap) wrap.style.display = 'none';
+      console.warn('QR library unavailable; join QR hidden.');
+    }
+  })();
 
   // Slider fill logic
   function updateSliderFill(slider) {

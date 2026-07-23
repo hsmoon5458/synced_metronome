@@ -651,3 +651,40 @@ select:focus {
         gap: 0.4rem;
     }
 }
+
+/* Home-screen QR code for joining from another device */
+#qrJoin {
+    margin-top: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+#qrCode {
+    background: #fff;
+    padding: 0.8rem;
+    border-radius: 0.9rem;
+    line-height: 0;
+    box-shadow: var(--shadow);
+}
+
+#qrCode img,
+#qrCode canvas {
+    display: block;
+}
+
+.qr-label {
+    font-size: 0.82rem;
+    color: var(--primary-dark);
+    margin: 0;
+}
+
+.qr-url {
+    font-size: 0.72rem;
+    color: var(--accent);
+    opacity: 0.85;
+    margin: 0;
+    word-break: break-all;
+    text-align: center;
+}
