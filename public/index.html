@@ -126,7 +126,7 @@
 
   // Metronome state
   let bpm = 120;
-  let accentEnabled = localStorage.getItem('metronomeAccentEnabled') !== 'false';
+  let accentEnabled = true;
   let isRunning = false;
   let startTime = null;
   let nextTick = 0;
@@ -387,10 +387,10 @@
 
   // Toggle whether beat 1 gets the accent (louder/higher-pitched) treatment.
   // Purely a local playback preference — each device schedules its own
-  // click locally, so this isn't synced between host and followers.
+  // click locally, so this isn't synced between host and followers. Not
+  // persisted: every fresh page load starts with the accent back on.
   function toggleAccent() {
     accentEnabled = !accentEnabled;
-    localStorage.setItem('metronomeAccentEnabled', String(accentEnabled));
     updateBeatDots();
   }
 
