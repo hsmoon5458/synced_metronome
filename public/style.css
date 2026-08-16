@@ -244,24 +244,6 @@ body.playing .card {
     outline-offset: 3px;
 }
 
-.accent-status {
-    margin: 0 0 0.5rem;
-    font-size: 0.72rem;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    transition: color var(--transition);
-}
-
-.accent-status.on {
-    color: var(--accent-light);
-}
-
-.accent-status.off {
-    color: var(--primary-dark);
-    opacity: 0.6;
-}
-
 /* ── Buttons ── */
 button {
     padding: 0.7rem 1.5rem;
