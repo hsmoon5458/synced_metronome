@@ -188,10 +188,6 @@ body.playing .card {
     100% { transform: scale(1.4); opacity: 0; }
 }
 
-.dot.accent {
-    border-color: rgba(255, 152, 0, 0.3);
-}
-
 .dot.accent.active {
     background: radial-gradient(circle at 40% 35%, #ffe0b2, #ffb74d);
     box-shadow: 0 0 24px #ffd18088, 0 0 50px #ff980033;
@@ -199,13 +195,46 @@ body.playing .card {
 }
 
 /* The first-beat dot always doubles as the accent on/off toggle, whether
-   or not the accent is currently enabled. */
+   or not the accent is currently enabled. These :not(.active) rules give
+   it a bold, unmistakable rest state so ON vs OFF reads clearly whether
+   the metronome is running or stopped — not just during the beat flash. */
 .dot.accent-toggle {
     cursor: pointer;
 }
 
-.dot.accent-toggle:hover,
-.dot.accent-toggle:focus-visible {
+.dot.accent-toggle.accent:not(.active) {
+    background: rgba(255, 152, 0, 0.16);
+    border-style: solid;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(255, 152, 0, 0.16);
+}
+
+.dot.accent-toggle.accent:not(.active)::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 50%;
+    background: var(--accent);
+    transform: translate(-50%, -50%);
+}
+
+.dot.accent-toggle:not(.accent):not(.active) {
+    border-style: dashed;
+    border-color: rgba(255, 255, 255, 0.25);
+    opacity: 0.5;
+}
+
+.dot.accent-toggle.accent:not(.active):hover,
+.dot.accent-toggle.accent:not(.active):focus-visible {
+    transform: scale(1.08);
+}
+
+.dot.accent-toggle:not(.accent):not(.active):hover,
+.dot.accent-toggle:not(.accent):not(.active):focus-visible {
+    opacity: 1;
     border-color: var(--accent);
     transform: scale(1.08);
 }
@@ -213,6 +242,24 @@ body.playing .card {
 .dot.accent-toggle:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 3px;
+}
+
+.accent-status {
+    margin: 0 0 0.5rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    transition: color var(--transition);
+}
+
+.accent-status.on {
+    color: var(--accent-light);
+}
+
+.accent-status.off {
+    color: var(--primary-dark);
+    opacity: 0.6;
 }
 
 /* ── Buttons ── */

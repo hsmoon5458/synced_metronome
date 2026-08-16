@@ -22,6 +22,7 @@
     <span id="connectionLabel">Connecting...</span>
   </div>
   <div class="beat-indicators" id="beatDots"></div>
+  <p class="accent-status" id="accentStatus"></p>
 
   <div class="card">
     <div id="roleChooser">
@@ -382,6 +383,12 @@
         });
       }
       container.appendChild(dot);
+    }
+    const status = document.getElementById('accentStatus');
+    if (status) {
+      status.textContent = accentEnabled ? 'Accent beat: ON' : 'Accent beat: OFF';
+      status.classList.toggle('on', accentEnabled);
+      status.classList.toggle('off', !accentEnabled);
     }
   }
 
