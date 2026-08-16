@@ -954,17 +954,58 @@
     dragFromIndex = idx;
   }
 
-  function handleDrop(idx) {
-    if (dragFromIndex === null || dragFromIndex === idx) return;
+  function reorderPresets(fromIdx, toIdx) {
+    if (fromIdx === null || fromIdx === toIdx) return;
     const presets = getPresets();
     const selectedPreset = presets[selectedPresetIndex];
-    const [moved] = presets.splice(dragFromIndex, 1);
-    presets.splice(idx, 0, moved);
+    const [moved] = presets.splice(fromIdx, 1);
+    presets.splice(toIdx, 0, moved);
     setPresets(presets);
     const newSelectedIndex = presets.indexOf(selectedPreset);
     selectedPresetIndex = newSelectedIndex === -1 ? 0 : newSelectedIndex;
-    dragFromIndex = null;
     renderPresets();
+  }
+
+  function handleDrop(idx) {
+    reorderPresets(dragFromIndex, idx);
+    dragFromIndex = null;
+  }
+
+  // Touch devices don't fire native HTML5 drag events, so reordering on
+  // phones is driven by touch tracking on a dedicated handle instead.
+  let touchDragIndex = null;
+  let touchOverIndex = null;
+
+  function clearDragVisuals() {
+    document.querySelectorAll('#presetList li.dragging, #presetList li.drag-over')
+      .forEach(el => el.classList.remove('dragging', 'drag-over'));
+  }
+
+  function handleTouchStart(idx, li) {
+    touchDragIndex = idx;
+    touchOverIndex = idx;
+    li.classList.add('dragging');
+  }
+
+  function handleTouchMove(e) {
+    if (touchDragIndex === null) return;
+    e.preventDefault();
+    const touch = e.touches[0];
+    const target = document.elementFromPoint(touch.clientX, touch.clientY);
+    const li = target && target.closest('#presetList li');
+    document.querySelectorAll('#presetList li.drag-over').forEach(el => el.classList.remove('drag-over'));
+    if (li) {
+      touchOverIndex = parseInt(li.dataset.index, 10);
+      li.classList.add('drag-over');
+    }
+  }
+
+  function handleTouchEnd() {
+    if (touchDragIndex === null) return;
+    clearDragVisuals();
+    reorderPresets(touchDragIndex, touchOverIndex);
+    touchDragIndex = null;
+    touchOverIndex = null;
   }
 
   function renderPresets() {
@@ -977,11 +1018,13 @@
     presets.forEach((preset, i) => {
       const li = document.createElement('li');
       li.draggable = true;
+      li.dataset.index = i;
       li.className = i === selectedPresetIndex ? 'selected' : '';
       li.addEventListener('dragstart', () => handleDragStart(i));
       li.addEventListener('dragover', (e) => e.preventDefault());
       li.addEventListener('drop', () => handleDrop(i));
       li.innerHTML = `
+      <span class="preset-drag-handle">&#8942;&#8942;</span>
       <span class="preset-info" onclick="handleSelectPreset(${i})">
         ${preset.bpm} BPM ${preset.timeSignature}, ${subdivisionToText(preset.subdivision)}
       </span>
@@ -990,6 +1033,10 @@
         <button class="preset-btn preset-btn-delete" onclick="handleDeletePreset(${i})">delete</button>
       </span>
     `;
+      const handle = li.querySelector('.preset-drag-handle');
+      handle.addEventListener('touchstart', () => handleTouchStart(i, li), { passive: true });
+      handle.addEventListener('touchmove', handleTouchMove, { passive: false });
+      handle.addEventListener('touchend', handleTouchEnd);
       list.appendChild(li);
     });
   }
