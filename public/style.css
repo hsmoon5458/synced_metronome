@@ -503,38 +503,119 @@ select:focus {
 #presetList li {
     display: flex;
     align-items: center;
+    gap: 0.6rem;
     font-size: 0.88rem;
     margin: 0.3rem 0;
+    cursor: grab;
+    transition: opacity var(--transition);
+}
+
+#presetList li:active {
+    cursor: grabbing;
+}
+
+#presetList .preset-info {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     padding: 0.5rem 0.6rem;
     background: rgba(255, 255, 255, 0.03);
     border-radius: 0.5rem;
     border: 1px solid rgba(255, 255, 255, 0.05);
-    transition: background var(--transition);
+    cursor: pointer;
+    transition: background var(--transition), border-color var(--transition);
 }
 
-#presetList li:hover {
+#presetList .preset-info:hover {
     background: rgba(255, 255, 255, 0.06);
 }
 
+#presetList li.selected .preset-info {
+    background: var(--accent-dim);
+    border-color: var(--accent);
+    color: var(--accent-light);
+}
+
+#presetList .preset-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
 #presetList button.preset-btn {
-    border: none;
-    background: none;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.03);
     font-size: 0.78rem;
     color: var(--accent);
-    padding: 0.2rem 0.5rem;
-    margin-left: 0.3rem;
-    border-radius: 0.3rem;
+    padding: 0.35rem 0.6rem;
+    border-radius: 0.4rem;
     cursor: pointer;
-    opacity: 0.7;
     font-weight: 500;
     transition: all var(--transition);
 }
 
 #presetList button.preset-btn:hover {
     background: rgba(255, 152, 0, 0.12);
-    opacity: 1;
     transform: none;
     box-shadow: none;
+}
+
+#presetList button.preset-btn-delete {
+    color: #ff6b6b;
+}
+
+#presetList button.preset-btn-delete:hover {
+    background: rgba(255, 107, 107, 0.12);
+    border-color: rgba(255, 107, 107, 0.3);
+}
+
+/* ── Keyboard shortcuts mini-panel (host only) ── */
+#shortcutsPanel {
+    margin-top: 1.25rem;
+    padding-top: 0.85rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+#shortcutsPanel h4 {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--primary-dark);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin: 0 0 0.5rem;
+    opacity: 0.7;
+}
+
+#shortcutsPanel ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 0.7rem;
+    justify-content: center;
+}
+
+#shortcutsPanel li {
+    font-size: 0.72rem;
+    color: var(--primary-dark);
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+#shortcutsPanel kbd {
+    font-family: inherit;
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: var(--primary);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0.3rem;
+    padding: 0.1rem 0.4rem;
 }
 
 /* ── Visual Indicators ── */
