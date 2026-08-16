@@ -937,11 +937,6 @@
     }
   }
 
-  function handleSelectPreset(idx) {
-    selectedPresetIndex = idx;
-    renderPresets();
-  }
-
   function handleDeletePreset(idx) {
     deletePreset(idx);
     if (selectedPresetIndex >= idx) {
@@ -1025,12 +1020,11 @@
       li.addEventListener('drop', () => handleDrop(i));
       li.innerHTML = `
       <span class="preset-drag-handle">&#8942;&#8942;</span>
-      <span class="preset-info" onclick="handleSelectPreset(${i})">
+      <span class="preset-info" onclick="handleLoadPreset(${i})">
         ${preset.bpm} BPM ${preset.timeSignature}, ${subdivisionToText(preset.subdivision)}
       </span>
       <span class="preset-actions">
-        <button class="preset-btn" onclick="handleLoadPreset(${i})">load</button>
-        <button class="preset-btn preset-btn-delete" onclick="handleDeletePreset(${i})">delete</button>
+        <button class="preset-btn preset-btn-delete" onclick="handleDeletePreset(${i})">discard</button>
       </span>
     `;
       const handle = li.querySelector('.preset-drag-handle');
@@ -1041,12 +1035,16 @@
     });
   }
 
-  // Host-only keyboard shortcuts: ignored while typing in an input/select
-  // so BPM entry and dropdowns aren't hijacked.
+  // Host-only keyboard shortcuts: ignored while typing in a text/number
+  // field or a dropdown, so BPM entry and dropdowns aren't hijacked. The
+  // BPM range slider is exempt — it keeps focus after a drag, but it's
+  // not a typing field, so shortcuts should still work while it's focused.
   document.addEventListener('keydown', (e) => {
     if (role !== 'host') return;
-    const tag = (e.target && e.target.tagName || '').toLowerCase();
-    if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
+    const target = e.target;
+    const tag = (target && target.tagName || '').toLowerCase();
+    const isRangeInput = tag === 'input' && target.type === 'range';
+    if (!isRangeInput && (tag === 'input' || tag === 'select' || tag === 'textarea')) return;
 
     if (e.code === 'Space') {
       e.preventDefault();
