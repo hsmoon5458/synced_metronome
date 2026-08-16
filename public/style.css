@@ -198,6 +198,23 @@ body.playing .card {
     border-color: #fff;
 }
 
+/* The first-beat dot always doubles as the accent on/off toggle, whether
+   or not the accent is currently enabled. */
+.dot.accent-toggle {
+    cursor: pointer;
+}
+
+.dot.accent-toggle:hover,
+.dot.accent-toggle:focus-visible {
+    border-color: var(--accent);
+    transform: scale(1.08);
+}
+
+.dot.accent-toggle:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+}
+
 /* ── Buttons ── */
 button {
     padding: 0.7rem 1.5rem;

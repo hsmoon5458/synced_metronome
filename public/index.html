@@ -108,6 +108,7 @@
           <li><kbd>M</kbd> / <kbd>N</kbd> BPM +1 / -1</li>
           <li><kbd>S</kbd> Save preset</li>
           <li><kbd>1</kbd>-<kbd>9</kbd> Load preset</li>
+          <li><kbd>B</kbd> Toggle accent beat</li>
           <li>Drag a preset to reorder</li>
         </ul>
       </div>
@@ -125,6 +126,7 @@
 
   // Metronome state
   let bpm = 120;
+  let accentEnabled = localStorage.getItem('metronomeAccentEnabled') !== 'false';
   let isRunning = false;
   let startTime = null;
   let nextTick = 0;
@@ -365,10 +367,31 @@
       const dot = document.createElement('div');
       dot.classList.add('dot');
       if (i === 0) {
-        dot.classList.add('accent');
+        dot.classList.add('accent-toggle');
+        dot.classList.toggle('accent', accentEnabled);
+        dot.setAttribute('role', 'button');
+        dot.setAttribute('tabindex', '0');
+        dot.setAttribute('aria-pressed', String(accentEnabled));
+        dot.title = accentEnabled ? 'Accent beat on — click to turn off (B)' : 'Accent beat off — click to turn on (B)';
+        dot.addEventListener('click', toggleAccent);
+        dot.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            toggleAccent();
+          }
+        });
       }
       container.appendChild(dot);
     }
+  }
+
+  // Toggle whether beat 1 gets the accent (louder/higher-pitched) treatment.
+  // Purely a local playback preference — each device schedules its own
+  // click locally, so this isn't synced between host and followers.
+  function toggleAccent() {
+    accentEnabled = !accentEnabled;
+    localStorage.setItem('metronomeAccentEnabled', String(accentEnabled));
+    updateBeatDots();
   }
 
   // Highlight the current beat dot
@@ -608,7 +631,7 @@
 
       while (nextTick < now + 0.3) {
         const currentBeat = Math.floor(beatCount / subdivision);
-        const isFirstBeat = (beatCount % ticksPerBar === 0);
+        const isFirstBeat = (beatCount % ticksPerBar === 0) && accentEnabled;
         const isMainBeat = (beatCount % subdivision === 0);
         scheduleClick(nextTick, isFirstBeat);
         if (isMainBeat) {
@@ -1035,16 +1058,25 @@
     });
   }
 
-  // Host-only keyboard shortcuts: ignored while typing in a text/number
-  // field or a dropdown, so BPM entry and dropdowns aren't hijacked. The
-  // BPM range slider is exempt — it keeps focus after a drag, but it's
-  // not a typing field, so shortcuts should still work while it's focused.
+  // Keyboard shortcuts: ignored while typing in a text/number field or a
+  // dropdown, so BPM entry and dropdowns aren't hijacked. The BPM range
+  // slider is exempt — it keeps focus after a drag, but it's not a typing
+  // field, so shortcuts should still work while it's focused.
   document.addEventListener('keydown', (e) => {
-    if (role !== 'host') return;
     const target = e.target;
     const tag = (target && target.tagName || '').toLowerCase();
     const isRangeInput = tag === 'input' && target.type === 'range';
     if (!isRangeInput && (tag === 'input' || tag === 'select' || tag === 'textarea')) return;
+
+    // Accent toggle is a local playback preference, so it works for both
+    // host and follower — everything else below only makes sense for host.
+    if (e.key.toLowerCase() === 'b') {
+      e.preventDefault();
+      toggleAccent();
+      return;
+    }
+
+    if (role !== 'host') return;
 
     if (e.code === 'Space') {
       e.preventDefault();
