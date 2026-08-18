@@ -925,6 +925,43 @@
     alert(message);
   });
 
+  function renderRoomList(rooms) {
+    const list = document.getElementById('roomList');
+    const empty = document.getElementById('roomListEmpty');
+    if (!list || !empty) return;
+    list.innerHTML = '';
+    if (!rooms || rooms.length === 0) {
+      empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+    rooms.forEach((r) => {
+      const li = document.createElement('li');
+      li.className = 'room-row';
+      li.setAttribute('role', 'button');
+      li.setAttribute('tabindex', '0');
+      const statusClass = r.isRunning ? 'playing' : 'stopped';
+      const peopleLabel = r.participantCount === 1 ? 'person' : 'people';
+      li.innerHTML = `
+        <span class="room-row-label">Room ${r.roomId}</span>
+        <span class="room-row-meta">
+          <span class="room-status-dot ${statusClass}"></span>
+          ${r.participantCount} ${peopleLabel}
+        </span>
+      `;
+      li.addEventListener('click', () => attemptJoinRoom(r.roomId));
+      li.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          attemptJoinRoom(r.roomId);
+        }
+      });
+      list.appendChild(li);
+    });
+  }
+
+  socket.on('roomList', renderRoomList);
+
   function updateSettings() {
     if (role !== 'host') return;
     const ts = document.getElementById("timeSigInput").value;
