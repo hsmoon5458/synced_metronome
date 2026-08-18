@@ -101,6 +101,11 @@ function removeSocketFromRoom(socket) {
   const room = roomManager.getRoom(roomId);
   if (room) {
     room.clients.delete(socket.id);
+    if (socket.id === room.hostSocketId) {
+      room.hostSocketId = null;
+      io.to(`room:${roomId}`).emit('hostAvailability', true);
+    }
+    io.to(`room:${roomId}`).emit('clientCount', room.clients.size);
   }
   socket.leave(`room:${roomId}`);
   socket.data.roomId = null;
