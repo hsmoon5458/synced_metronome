@@ -3,6 +3,7 @@ const http = require('http');
 const socketIO = require('socket.io');
 const path = require('path');
 const packageJson = require('./package.json');
+const { RoomManager, buildSyncPayload, DEFAULT_ROOM_ID } = require('./rooms');
 
 // Configuration
 const PORT = process.env.PORT || 3000;
@@ -10,73 +11,129 @@ const app = express();
 const server = http.createServer(app);
 // connectionStateRecovery lets a client that drops and reconnects within the
 // window (e.g. a phone screen locking briefly) resume with the SAME socket.id
-// instead of being treated as a brand-new connection. We rely on that below
-// to give the host a grace period before treating a disconnect as final.
+// (and, per the Socket.IO docs, its rooms and socket.data) instead of being
+// treated as a brand-new connection. We rely on that below to give a room's
+// host a grace period before treating a disconnect as final.
 const io = socketIO(server, {
   connectionStateRecovery: {
     maxDisconnectionDuration: 30000
   }
 });
 
-// Metronome state
-let metronomeState = {
-  bpm: 120,
-  timeSignature: '4/4',
-  subdivision: 2,
-  startTime: null,
-  isRunning: false,
-  accentEnabled: true
-};
+const roomManager = new RoomManager();
 
-// Connection tracking
-let hostSocketId = null;
-let clients = new Set();
-
-// Builds the payload broadcast on 'sync'. `overrides` lets callers substitute
-// fields (e.g. startTime: null on stop) without duplicating the field list.
-function buildSyncPayload(overrides = {}) {
-  return {
-    bpm: metronomeState.bpm,
-    startTime: metronomeState.startTime,
-    isRunning: metronomeState.isRunning,
-    timeSignature: metronomeState.timeSignature,
-    subdivision: metronomeState.subdivision,
-    accentEnabled: metronomeState.accentEnabled,
-    ...overrides
-  };
-}
-
-// How long to wait after the host's socket disconnects before assuming they
-// really left (vs. a brief network blip / screen lock) and stopping the
-// session for everyone else.
+// How long to wait after a room's host disconnects before assuming they
+// really left (vs. a brief network blip / screen lock) and stopping/closing
+// the room for everyone else.
 const HOST_GRACE_MS = 15000;
-let hostGraceTimer = null;
 
-function cancelHostGraceTimer() {
-  if (hostGraceTimer) {
-    clearTimeout(hostGraceTimer);
-    hostGraceTimer = null;
+function cancelHostGraceTimer(room) {
+  if (room.hostGraceTimer) {
+    clearTimeout(room.hostGraceTimer);
+    room.hostGraceTimer = null;
   }
 }
 
-// Actually give up on the host: clear ownership and, if a session was
-// running, stop it for everyone. Only called once the grace period elapses
-// without the host reconnecting.
-function finalizeHostLoss() {
-  hostGraceTimer = null;
-  console.log('Host grace period elapsed — treating host as gone');
-  hostSocketId = null;
-  io.emit('hostAvailability', true);
+// Actually give up on a room's host once the grace period elapses without
+// them reconnecting. The permanent room (1) just goes back to "available",
+// exactly like today's single-room app. An ephemeral room (2+) closes for
+// good: everyone still in it is kicked back to the lobby, and its number is
+// freed for reuse.
+function finalizeHostLoss(roomId) {
+  const room = roomManager.getRoom(roomId);
+  if (!room) return;
+  room.hostGraceTimer = null;
+  console.log(`Host grace period elapsed for room ${roomId} — treating host as gone`);
+  room.hostSocketId = null;
 
-  if (metronomeState.isRunning) {
-    metronomeState.isRunning = false;
-    metronomeState.startTime = null;
-    io.emit('sync', buildSyncPayload({ startTime: null }));
+  if (roomManager.isPermanent(roomId)) {
+    io.to(`room:${roomId}`).emit('hostAvailability', true);
+    if (room.metronomeState.isRunning) {
+      room.metronomeState.isRunning = false;
+      room.metronomeState.startTime = null;
+      io.to(`room:${roomId}`).emit('sync', buildSyncPayload(room, { startTime: null }));
+    }
+    return;
   }
+
+  io.to(`room:${roomId}`).emit('roomClosed', { reason: 'host_left' });
+  const socketIdsInRoom = io.sockets.adapter.rooms.get(`room:${roomId}`);
+  if (socketIdsInRoom) {
+    for (const socketId of Array.from(socketIdsInRoom)) {
+      const s = io.sockets.sockets.get(socketId);
+      if (s) {
+        s.leave(`room:${roomId}`);
+        s.join('lobby');
+        s.data.roomId = null;
+      }
+    }
+  }
+  roomManager.closeRoom(roomId);
+  broadcastRoomList();
+}
+
+function broadcastRoomList() {
+  io.to('lobby').emit('roomList', roomManager.listRooms());
+}
+
+// Moves a socket into a room: leaves 'lobby' (if present), joins the
+// Socket.IO room, updates socket.data.roomId, and registers it in the
+// room's participant set. Safe to call repeatedly (e.g. on every
+// 'identify', including reconnects) — join/add are idempotent.
+function joinSocketToRoom(socket, roomId) {
+  const previousRoomId = socket.data.roomId;
+  if (previousRoomId != null && previousRoomId !== roomId) {
+    removeSocketFromRoom(socket);
+  }
+  socket.leave('lobby');
+  socket.join(`room:${roomId}`);
+  socket.data.roomId = roomId;
+  const room = roomManager.getRoom(roomId);
+  if (room) {
+    room.clients.add(socket.id);
+    io.to(`room:${roomId}`).emit('clientCount', room.clients.size);
+  }
+}
+
+function removeSocketFromRoom(socket) {
+  const roomId = socket.data.roomId;
+  if (roomId == null) return;
+  const room = roomManager.getRoom(roomId);
+  if (room) {
+    room.clients.delete(socket.id);
+  }
+  socket.leave(`room:${roomId}`);
+  socket.data.roomId = null;
+}
+
+// Claims the host seat of `room` for `socket`, if it's free or if this is
+// the same host reclaiming within the grace period (recovered session /
+// re-identify keeps the same socket.id — see connectionStateRecovery
+// above). Returns false if someone else already holds it.
+function claimHost(socket, roomId, room) {
+  const isReclaim = room.hostSocketId === socket.id;
+  const isNewHost = room.hostSocketId === null;
+  if (!isNewHost && !isReclaim) return false;
+
+  room.hostSocketId = socket.id;
+  cancelHostGraceTimer(room);
+  if (isNewHost) {
+    console.log(`Host identified for room ${roomId}: ${socket.id}`);
+    io.to(`room:${roomId}`).emit('hostAvailability', false);
+  } else {
+    console.log(`Host reclaimed seat in room ${roomId} within grace period: ${socket.id}`);
+  }
+  return true;
 }
 
 // Serve static files from the public directory
 app.use(express.static(path.join(__dirname, 'public')));
+
+// SPA fallback so a direct visit/refresh on a room URL still serves the app
+// (the room number itself is parsed client-side from the path).
+app.get('/r/:roomId', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 // Endpoint to get the version
 app.get('/version', (req, res) => {
@@ -92,18 +149,19 @@ app.get('/time', (req, res) => {
 
 // Socket.IO connection handling
 io.on('connection', (socket) => {
-  // Add client to tracking
-  clients.add(socket.id);
-  console.log(`Client connected: ${socket.id} (total: ${clients.size})`);
-  
-  // Notify all clients about new connection count
-  io.emit('clientCount', clients.size);
-  
-  // Notify new client about host availability
-  socket.emit('hostAvailability', hostSocketId === null);
-  
-  // Send current state to the new client
-  socket.emit('sync', buildSyncPayload());
+  // A recovered connection (brief disconnect within the window) already has
+  // its previous socket.data.roomId and Socket.IO room membership restored
+  // by Socket.IO itself — don't clobber that. A fresh connection starts in
+  // the lobby with no room.
+  if (!socket.recovered) {
+    socket.data.roomId = null;
+    socket.join('lobby');
+  }
+  console.log(`Client connected: ${socket.id} (recovered: ${socket.recovered})`);
+
+  if (socket.data.roomId == null) {
+    socket.emit('roomList', roomManager.listRooms());
+  }
 
   // Time synchronization round-trip (NTP-style, 4 timestamps).
   // Client sends t0 (its send time); we stamp t1 on receive and t2 on send.
@@ -115,42 +173,82 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Handle role identification
-  socket.on('identify', (role) => {
-    if (role === 'host') {
-      // Either nobody's hosting, or this is the same host reclaiming its
-      // seat within the grace period (recovered session keeps the same
-      // socket.id — see connectionStateRecovery above).
-      const isReclaim = hostSocketId === socket.id;
-      const isNewHost = hostSocketId === null;
+  // Create a brand new ephemeral room and become its host. If data.roomId
+  // is given, claims that specific number instead of auto-allocating one
+  // (used by the "host this room instead" fallback when a /r/N link turns
+  // out to be dead) -- fails with { error: 'room_taken' } if it's already
+  // in use.
+  socket.on('createRoom', (data, callback) => {
+    const requestedId = data && data.roomId;
+    const roomId = requestedId ? roomManager.createRoomWithId(requestedId) : roomManager.createRoom();
+    if (roomId == null) {
+      if (typeof callback === 'function') callback({ error: 'room_taken' });
+      return;
+    }
+    const room = roomManager.getRoom(roomId);
+    joinSocketToRoom(socket, roomId);
+    claimHost(socket, roomId, room);
+    console.log(`Room ${roomId} created, hosted by ${socket.id}`);
+    broadcastRoomList();
+    if (typeof callback === 'function') callback({ roomId });
+  });
 
-      if (isNewHost || isReclaim) {
-        hostSocketId = socket.id;
-        cancelHostGraceTimer();
-        if (isNewHost) {
-          console.log(`Host identified: ${socket.id}`);
-          // Broadcast that host is taken
-          io.emit('hostAvailability', false);
-        } else {
-          console.log(`Host reclaimed seat within grace period: ${socket.id}`);
-        }
-      } else {
-        console.log(`Client ${socket.id} attempted to become host, but a host already exists`);
+  // Join an existing room as a follower.
+  socket.on('joinRoom', (data, callback) => {
+    const roomId = data && data.roomId;
+    const room = roomManager.getRoom(roomId);
+    if (!room) {
+      if (typeof callback === 'function') callback({ ok: false, error: 'not_found' });
+      return;
+    }
+    joinSocketToRoom(socket, roomId);
+    socket.emit('hostAvailability', room.hostSocketId === null);
+    socket.emit('sync', buildSyncPayload(room));
+    if (!roomManager.isPermanent(roomId)) broadcastRoomList();
+    if (typeof callback === 'function') callback({ ok: true });
+  });
+
+  // Handle role identification. Accepts either a bare role string (legacy —
+  // this is what the iOS app sends today, and it's always routed to the
+  // permanent room 1) or { role, roomId } (the web client, mainly used to
+  // reclaim a room/host seat after a reconnect).
+  socket.on('identify', (payload) => {
+    const role = typeof payload === 'string' ? payload : (payload && payload.role);
+    const roomId = (payload && typeof payload === 'object' && payload.roomId != null)
+      ? payload.roomId
+      : DEFAULT_ROOM_ID;
+
+    const room = roomManager.getRoom(roomId);
+    if (!room) {
+      removeSocketFromRoom(socket);
+      socket.join('lobby');
+      socket.emit('roomClosed', { reason: 'not_found' });
+      return;
+    }
+
+    joinSocketToRoom(socket, roomId);
+
+    if (role === 'host') {
+      const claimed = claimHost(socket, roomId, room);
+      if (!claimed) {
+        console.log(`Client ${socket.id} attempted to become host of room ${roomId}, but a host already exists`);
         socket.emit('hostStatus', { isHost: false, message: 'Another host is already connected' });
         return;
       }
     }
-    
-    // Re-sync this client with current state
-    socket.emit('sync', buildSyncPayload());
+
+    socket.emit('hostAvailability', room.hostSocketId === null);
+    socket.emit('sync', buildSyncPayload(room));
   });
 
   // Handle accent beat enable/disable — host-only, mirrors updateSettings.
   socket.on('setAccentEnabled', (data) => {
-    if (socket.id === hostSocketId) {
-      metronomeState.accentEnabled = !!(data && data.enabled);
-      console.log('Accent beat toggled by host:', metronomeState.accentEnabled);
-      io.emit('sync', buildSyncPayload());
+    const roomId = socket.data.roomId;
+    const room = roomId != null ? roomManager.getRoom(roomId) : null;
+    if (room && socket.id === room.hostSocketId) {
+      room.metronomeState.accentEnabled = !!(data && data.enabled);
+      console.log(`Accent beat toggled by host of room ${roomId}:`, room.metronomeState.accentEnabled);
+      io.to(`room:${roomId}`).emit('sync', buildSyncPayload(room));
     } else {
       console.log(`Non-host client ${socket.id} attempted to toggle accent beat`);
     }
@@ -158,31 +256,30 @@ io.on('connection', (socket) => {
 
   // Handle metronome setting updates
   socket.on('updateSettings', (settings) => {
-    if (socket.id === hostSocketId) {
-      // Validate settings
-      const validatedBpm = Math.min(300, Math.max(30, settings.bpm || metronomeState.bpm));
-      const validatedTimeSignature = settings.timeSignature || metronomeState.timeSignature;
-      const validatedSubdivision = Math.min(4, Math.max(1, settings.subdivision || metronomeState.subdivision));
-      
-      // Update state
-      metronomeState.bpm = validatedBpm;
-      metronomeState.timeSignature = validatedTimeSignature;
-      metronomeState.subdivision = validatedSubdivision;
-      
+    const roomId = socket.data.roomId;
+    const room = roomId != null ? roomManager.getRoom(roomId) : null;
+    if (room && socket.id === room.hostSocketId) {
+      const validatedBpm = Math.min(300, Math.max(30, settings.bpm || room.metronomeState.bpm));
+      const validatedTimeSignature = settings.timeSignature || room.metronomeState.timeSignature;
+      const validatedSubdivision = Math.min(4, Math.max(1, settings.subdivision || room.metronomeState.subdivision));
+
+      room.metronomeState.bpm = validatedBpm;
+      room.metronomeState.timeSignature = validatedTimeSignature;
+      room.metronomeState.subdivision = validatedSubdivision;
+
       // If a new startTime is provided (e.g. for re-syncing on BPM change), update it
       if (settings.startTime) {
-        metronomeState.startTime = settings.startTime;
+        room.metronomeState.startTime = settings.startTime;
       }
 
-      console.log('Settings updated by host:', {
+      console.log(`Settings updated by host of room ${roomId}:`, {
         bpm: validatedBpm,
         timeSignature: validatedTimeSignature,
         subdivision: validatedSubdivision,
-        startTime: metronomeState.startTime
+        startTime: room.metronomeState.startTime
       });
-      
-      // Broadcast updated settings to all clients
-      io.emit('sync', buildSyncPayload());
+
+      io.to(`room:${roomId}`).emit('sync', buildSyncPayload(room));
     } else {
       console.log(`Non-host client ${socket.id} attempted to update settings`);
     }
@@ -190,15 +287,16 @@ io.on('connection', (socket) => {
 
   // Handle metronome start request
   socket.on('startMetronome', () => {
-    if (socket.id === hostSocketId) {
+    const roomId = socket.data.roomId;
+    const room = roomId != null ? roomManager.getRoom(roomId) : null;
+    if (room && socket.id === room.hostSocketId) {
       // Start metronome with a 1-second future start time for synchronization
-      metronomeState.startTime = Date.now() + 1000;
-      metronomeState.isRunning = true;
-      
-      console.log('Metronome started at', new Date(metronomeState.startTime).toISOString());
-      
-      // Broadcast start command to all clients
-      io.emit('sync', buildSyncPayload());
+      room.metronomeState.startTime = Date.now() + 1000;
+      room.metronomeState.isRunning = true;
+
+      console.log(`Metronome started in room ${roomId} at`, new Date(room.metronomeState.startTime).toISOString());
+
+      io.to(`room:${roomId}`).emit('sync', buildSyncPayload(room));
     } else {
       console.log(`Non-host client ${socket.id} attempted to start metronome`);
     }
@@ -206,13 +304,14 @@ io.on('connection', (socket) => {
 
   // Handle metronome stop request
   socket.on('stopMetronome', () => {
-    if (socket.id === hostSocketId) {
-      metronomeState.isRunning = false;
-      
-      console.log('Metronome stopped by host');
-      
-      // Broadcast stop command to all clients
-      io.emit('sync', buildSyncPayload({ startTime: null }));
+    const roomId = socket.data.roomId;
+    const room = roomId != null ? roomManager.getRoom(roomId) : null;
+    if (room && socket.id === room.hostSocketId) {
+      room.metronomeState.isRunning = false;
+
+      console.log(`Metronome stopped by host of room ${roomId}`);
+
+      io.to(`room:${roomId}`).emit('sync', buildSyncPayload(room, { startTime: null }));
     } else {
       console.log(`Non-host client ${socket.id} attempted to stop metronome`);
     }
@@ -220,23 +319,31 @@ io.on('connection', (socket) => {
 
   // Handle client disconnection
   socket.on('disconnect', () => {
-    clients.delete(socket.id);
-    
-    // If the host disconnected, don't tear the session down immediately —
-    // this fires on brief hiccups too (phone screen lock, WiFi roam, a
-    // throttled background tab missing heartbeats), not just the host
-    // actually leaving. Give them HOST_GRACE_MS to reconnect (via
-    // connectionStateRecovery, which hands the same socket.id back) and
-    // reclaim the seat in the 'identify' handler above. Only stop playback
-    // for everyone if they don't make it back in time.
-    if (socket.id === hostSocketId) {
-      console.log(`Host disconnected — starting ${HOST_GRACE_MS}ms grace period`);
-      cancelHostGraceTimer();
-      hostGraceTimer = setTimeout(finalizeHostLoss, HOST_GRACE_MS);
+    const roomId = socket.data.roomId;
+    if (roomId != null) {
+      const room = roomManager.getRoom(roomId);
+      if (room) {
+        room.clients.delete(socket.id);
+        io.to(`room:${roomId}`).emit('clientCount', room.clients.size);
+
+        // If the host disconnected, don't tear the room down immediately —
+        // this fires on brief hiccups too (phone screen lock, WiFi roam, a
+        // throttled background tab missing heartbeats), not just the host
+        // actually leaving. Give them HOST_GRACE_MS to reconnect and
+        // reclaim the seat via 'identify' before finalizing the loss.
+        if (socket.id === room.hostSocketId) {
+          console.log(`Host disconnected from room ${roomId} — starting ${HOST_GRACE_MS}ms grace period`);
+          cancelHostGraceTimer(room);
+          room.hostGraceTimer = setTimeout(() => finalizeHostLoss(roomId), HOST_GRACE_MS);
+        }
+
+        if (!roomManager.isPermanent(roomId)) {
+          broadcastRoomList();
+        }
+      }
     }
-    
-    console.log(`Client disconnected: ${socket.id} (remaining: ${clients.size})`);
-    io.emit('clientCount', clients.size);
+
+    console.log(`Client disconnected: ${socket.id}`);
   });
 });
 
