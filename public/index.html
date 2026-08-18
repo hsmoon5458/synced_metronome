@@ -610,49 +610,51 @@
       const [numerator, denominator] = timeSignature.split('/').map(Number);
       const ticksPerBar = numerator * subdivision;
 
-      // Re-anchor timing to the server clock every ~2s. This corrects drift
-      // between audioCtx.currentTime (audio hardware clock) and the disciplined
-      // server clock. Host and clients both anchor to the server so they stay
-      // mutually aligned (the host is NOT a self-referential anchor).
-      if (now - lastDriftCheck > 2.0 && startTime && timeSynced) {
+      // Local stall guard (host + followers, no server involved at all): if
+      // the JS timer chain itself stalled (tab backgrounded, main-thread
+      // jank) long enough that nextTick fell behind the audio clock by more
+      // than one lookahead buffer's worth, skip forward with pure local
+      // arithmetic instead of flooding Web Audio with a burst of ticks that
+      // are all in the past and get clamped to "now" — i.e. several beeps
+      // firing at once. This runs every tick (not gated to the 2s check
+      // below) so it catches a stall immediately once the JS thread resumes.
+      const behindBy = now - nextTick;
+      if (behindBy > 0.3) {
+        const missedTicks = Math.floor(behindBy / interval) + 1;
+        console.log(`Stall recovery: skipping ${missedTicks} tick(s), fell behind by ${(behindBy * 1000).toFixed(0)}ms`);
+        nextTick += missedTicks * interval;
+        beatCount += missedTicks;
+      }
+
+      // Re-anchor timing to the server clock every ~2s — followers only.
+      // The host is a fully self-referential timing anchor: once started,
+      // its tick grid is driven purely by its own audio hardware clock and
+      // is never nudged by the server clock for any reason, so the host's
+      // beep can't be made to drift, glitch, or hiccup by network/server
+      // conditions. Followers keep disciplining against the server clock so
+      // they stay locked to the host's timeline (and to each other).
+      if (role !== 'host' && now - lastDriftCheck > 2.0 && startTime && timeSynced) {
         lastDriftCheck = now;
         const serverNow = globalNow();
         const intervalMs = (60000 / bpm) / subdivision;
         const hardwareLatency = (audioCtx.outputLatency || 0) + (audioCtx.baseLatency || 0);
 
-        // Ticks that should already have played by now, per the server clock.
-        const elapsedMs = serverNow - startTime;
-        const expectedBeat = Math.floor(elapsedMs / intervalMs);
-
-        if (beatCount <= expectedBeat) {
-          // We've fallen behind the wall clock by a full tick or more (tab
-          // was throttled / audio glitch): beatCount/nextTick themselves are
-          // stale, not just offset by the normal scheduling lookahead. Jump
-          // the beat counter forward to the next tick that hasn't happened
-          // yet and re-anchor nextTick to match — a real catch-up.
-          const targetMs = startTime + (expectedBeat + 1) * intervalMs;
-          nextTick = now + (targetMs - serverNow) / 1000 - hardwareLatency;
-          beatCount = expectedBeat + 1;
-          console.log(`Hard re-anchor (catch-up): beatCount -> ${beatCount}`);
-        } else {
-          // beatCount is still ahead of expectedBeat, as it should be thanks
-          // to the ~0.3s scheduling lookahead buffer below. Compare nextTick
-          // against where THAT SAME beat should sit on the audio clock —
-          // not "the next tick from right now", which is a different beat
-          // and would always look "late" by about one buffer's worth,
-          // causing a false re-anchor (and a duplicate, already-scheduled
-          // beat) on every check even with perfectly matched clocks.
-          const targetMs = startTime + beatCount * intervalMs;
-          const targetAudio = now + (targetMs - serverNow) / 1000 - hardwareLatency;
-          const drift = nextTick - targetAudio;
-          if (Math.abs(drift) > 0.05) {
-            // Large drift (audio glitch): hard re-anchor, same beat.
-            console.log(`Hard re-anchor: ${(drift * 1000).toFixed(1)}ms`);
-            nextTick = targetAudio;
-          } else if (Math.abs(drift) > 0.002) {
-            // Small drift: slew gently toward target to avoid an audible jump.
-            nextTick -= drift * 0.3;
-          }
+        // Compare nextTick against where the beat it already represents
+        // (beatCount) should sit on the audio clock — not "the next tick
+        // from right now", which is a different beat and would always look
+        // "late" by about one lookahead-buffer's worth, causing a false
+        // re-anchor (and a duplicate, already-scheduled beat) on every
+        // check even with perfectly matched clocks.
+        const targetMs = startTime + beatCount * intervalMs;
+        const targetAudio = now + (targetMs - serverNow) / 1000 - hardwareLatency;
+        const drift = nextTick - targetAudio;
+        if (Math.abs(drift) > 0.05) {
+          // Large drift (audio glitch): hard re-anchor, same beat.
+          console.log(`Hard re-anchor: ${(drift * 1000).toFixed(1)}ms`);
+          nextTick = targetAudio;
+        } else if (Math.abs(drift) > 0.002) {
+          // Small drift: slew gently toward target to avoid an audible jump.
+          nextTick -= drift * 0.3;
         }
       }
 
@@ -781,8 +783,11 @@
       if (isRunning) {
         requestWakeLock();
       }
-      // Host and clients both re-sync on tab visibility — both anchor to server
-      if (isRunning && startTime && timeSynced) {
+      // Followers only — the host is a self-referential timing anchor and
+      // never re-syncs to the server clock (see tickLoop). The host's own
+      // tick loop recovers from any backgrounding gap on its own via the
+      // local stall guard once its JS timer chain resumes.
+      if (role !== 'host' && isRunning && startTime && timeSynced) {
         syncTime(true).then(() => {
           if (isRunning && startTime) {
             if (tickTimer) {
@@ -797,8 +802,12 @@
   });
 
   function startPeriodicReSync() {
-    // Host and clients both re-sync periodically so the disciplined clock can
-    // refine its skew estimate and keep everyone locked to the server clock.
+    // Followers only — periodic re-sync refines the disciplined clock's
+    // skew estimate so followers stay locked to the server (and thus the
+    // host's timeline). The host never re-syncs: it's a self-referential
+    // timing anchor, so its beep is never touched by network/server
+    // conditions after the initial start.
+    if (role === 'host') return;
     stopPeriodicReSync();
     reSyncInterval = setInterval(() => {
       if (timeSynced) syncTime(true);
