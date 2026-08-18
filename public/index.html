@@ -909,6 +909,7 @@
     isRunning = false;
     if (tickTimer) { clearTimeout(tickTimer); tickTimer = null; }
     if (syncTimeout) { clearTimeout(syncTimeout); syncTimeout = null; }
+    stopPeriodicReSync();
     releaseScreenWake();
     document.body.classList.remove('role-host');
     document.body.classList.toggle('playing', false);
