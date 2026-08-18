@@ -8,7 +8,15 @@ const packageJson = require('./package.json');
 const PORT = process.env.PORT || 3000;
 const app = express();
 const server = http.createServer(app);
-const io = socketIO(server);
+// connectionStateRecovery lets a client that drops and reconnects within the
+// window (e.g. a phone screen locking briefly) resume with the SAME socket.id
+// instead of being treated as a brand-new connection. We rely on that below
+// to give the host a grace period before treating a disconnect as final.
+const io = socketIO(server, {
+  connectionStateRecovery: {
+    maxDisconnectionDuration: 30000
+  }
+});
 
 // Metronome state
 let metronomeState = {
@@ -16,12 +24,56 @@ let metronomeState = {
   timeSignature: '4/4',
   subdivision: 2,
   startTime: null,
-  isRunning: false
+  isRunning: false,
+  accentEnabled: true
 };
 
 // Connection tracking
 let hostSocketId = null;
 let clients = new Set();
+
+// Builds the payload broadcast on 'sync'. `overrides` lets callers substitute
+// fields (e.g. startTime: null on stop) without duplicating the field list.
+function buildSyncPayload(overrides = {}) {
+  return {
+    bpm: metronomeState.bpm,
+    startTime: metronomeState.startTime,
+    isRunning: metronomeState.isRunning,
+    timeSignature: metronomeState.timeSignature,
+    subdivision: metronomeState.subdivision,
+    accentEnabled: metronomeState.accentEnabled,
+    ...overrides
+  };
+}
+
+// How long to wait after the host's socket disconnects before assuming they
+// really left (vs. a brief network blip / screen lock) and stopping the
+// session for everyone else.
+const HOST_GRACE_MS = 15000;
+let hostGraceTimer = null;
+
+function cancelHostGraceTimer() {
+  if (hostGraceTimer) {
+    clearTimeout(hostGraceTimer);
+    hostGraceTimer = null;
+  }
+}
+
+// Actually give up on the host: clear ownership and, if a session was
+// running, stop it for everyone. Only called once the grace period elapses
+// without the host reconnecting.
+function finalizeHostLoss() {
+  hostGraceTimer = null;
+  console.log('Host grace period elapsed — treating host as gone');
+  hostSocketId = null;
+  io.emit('hostAvailability', true);
+
+  if (metronomeState.isRunning) {
+    metronomeState.isRunning = false;
+    metronomeState.startTime = null;
+    io.emit('sync', buildSyncPayload({ startTime: null }));
+  }
+}
 
 // Serve static files from the public directory
 app.use(express.static(path.join(__dirname, 'public')));
@@ -51,13 +103,7 @@ io.on('connection', (socket) => {
   socket.emit('hostAvailability', hostSocketId === null);
   
   // Send current state to the new client
-  socket.emit('sync', {
-    bpm: metronomeState.bpm,
-    startTime: metronomeState.startTime,
-    isRunning: metronomeState.isRunning,
-    timeSignature: metronomeState.timeSignature,
-    subdivision: metronomeState.subdivision
-  });
+  socket.emit('sync', buildSyncPayload());
 
   // Time synchronization round-trip (NTP-style, 4 timestamps).
   // Client sends t0 (its send time); we stamp t1 on receive and t2 on send.
@@ -72,14 +118,22 @@ io.on('connection', (socket) => {
   // Handle role identification
   socket.on('identify', (role) => {
     if (role === 'host') {
-      // If there's already a host, this becomes a backup
+      // Either nobody's hosting, or this is the same host reclaiming its
+      // seat within the grace period (recovered session keeps the same
+      // socket.id — see connectionStateRecovery above).
+      const isReclaim = hostSocketId === socket.id;
       const isNewHost = hostSocketId === null;
-      
-      if (isNewHost) {
+
+      if (isNewHost || isReclaim) {
         hostSocketId = socket.id;
-        console.log(`Host identified: ${socket.id}`);
-        // Broadcast that host is taken
-        io.emit('hostAvailability', false);
+        cancelHostGraceTimer();
+        if (isNewHost) {
+          console.log(`Host identified: ${socket.id}`);
+          // Broadcast that host is taken
+          io.emit('hostAvailability', false);
+        } else {
+          console.log(`Host reclaimed seat within grace period: ${socket.id}`);
+        }
       } else {
         console.log(`Client ${socket.id} attempted to become host, but a host already exists`);
         socket.emit('hostStatus', { isHost: false, message: 'Another host is already connected' });
@@ -88,13 +142,18 @@ io.on('connection', (socket) => {
     }
     
     // Re-sync this client with current state
-    socket.emit('sync', {
-      bpm: metronomeState.bpm,
-      startTime: metronomeState.startTime,
-      isRunning: metronomeState.isRunning,
-      timeSignature: metronomeState.timeSignature,
-      subdivision: metronomeState.subdivision
-    });
+    socket.emit('sync', buildSyncPayload());
+  });
+
+  // Handle accent beat enable/disable — host-only, mirrors updateSettings.
+  socket.on('setAccentEnabled', (data) => {
+    if (socket.id === hostSocketId) {
+      metronomeState.accentEnabled = !!(data && data.enabled);
+      console.log('Accent beat toggled by host:', metronomeState.accentEnabled);
+      io.emit('sync', buildSyncPayload());
+    } else {
+      console.log(`Non-host client ${socket.id} attempted to toggle accent beat`);
+    }
   });
 
   // Handle metronome setting updates
@@ -123,13 +182,7 @@ io.on('connection', (socket) => {
       });
       
       // Broadcast updated settings to all clients
-      io.emit('sync', {
-        bpm: metronomeState.bpm,
-        startTime: metronomeState.startTime,
-        isRunning: metronomeState.isRunning,
-        timeSignature: metronomeState.timeSignature,
-        subdivision: metronomeState.subdivision
-      });
+      io.emit('sync', buildSyncPayload());
     } else {
       console.log(`Non-host client ${socket.id} attempted to update settings`);
     }
@@ -145,13 +198,7 @@ io.on('connection', (socket) => {
       console.log('Metronome started at', new Date(metronomeState.startTime).toISOString());
       
       // Broadcast start command to all clients
-      io.emit('sync', {
-        bpm: metronomeState.bpm,
-        startTime: metronomeState.startTime,
-        isRunning: metronomeState.isRunning,
-        timeSignature: metronomeState.timeSignature,
-        subdivision: metronomeState.subdivision
-      });
+      io.emit('sync', buildSyncPayload());
     } else {
       console.log(`Non-host client ${socket.id} attempted to start metronome`);
     }
@@ -165,13 +212,7 @@ io.on('connection', (socket) => {
       console.log('Metronome stopped by host');
       
       // Broadcast stop command to all clients
-      io.emit('sync', {
-        bpm: metronomeState.bpm,
-        startTime: null,
-        isRunning: metronomeState.isRunning,
-        timeSignature: metronomeState.timeSignature,
-        subdivision: metronomeState.subdivision
-      });
+      io.emit('sync', buildSyncPayload({ startTime: null }));
     } else {
       console.log(`Non-host client ${socket.id} attempted to stop metronome`);
     }
@@ -181,28 +222,17 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     clients.delete(socket.id);
     
-    // If the host disconnected, clear the host ID
+    // If the host disconnected, don't tear the session down immediately —
+    // this fires on brief hiccups too (phone screen lock, WiFi roam, a
+    // throttled background tab missing heartbeats), not just the host
+    // actually leaving. Give them HOST_GRACE_MS to reconnect (via
+    // connectionStateRecovery, which hands the same socket.id back) and
+    // reclaim the seat in the 'identify' handler above. Only stop playback
+    // for everyone if they don't make it back in time.
     if (socket.id === hostSocketId) {
-      console.log('Host disconnected');
-      hostSocketId = null;
-      
-      // Broadcast that host is available again
-      io.emit('hostAvailability', true);
-      
-      // If metronome was running, stop it
-      if (metronomeState.isRunning) {
-        metronomeState.isRunning = false;
-        metronomeState.startTime = null;
-        
-        // Notify remaining clients
-        io.emit('sync', {
-          bpm: metronomeState.bpm,
-          startTime: null,
-          isRunning: false,
-          timeSignature: metronomeState.timeSignature,
-          subdivision: metronomeState.subdivision
-        });
-      }
+      console.log(`Host disconnected — starting ${HOST_GRACE_MS}ms grace period`);
+      cancelHostGraceTimer();
+      hostGraceTimer = setTimeout(finalizeHostLoss, HOST_GRACE_MS);
     }
     
     console.log(`Client disconnected: ${socket.id} (remaining: ${clients.size})`);

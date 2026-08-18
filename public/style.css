@@ -198,7 +198,7 @@ body.playing .card {
    or not the accent is currently enabled. These :not(.active) rules give
    it a bold, unmistakable rest state so ON vs OFF reads clearly whether
    the metronome is running or stopped — not just during the beat flash. */
-.dot.accent-toggle {
+body.role-host .dot.accent-toggle {
     cursor: pointer;
 }
 
@@ -227,13 +227,13 @@ body.playing .card {
     opacity: 0.5;
 }
 
-.dot.accent-toggle.accent:not(.active):hover,
-.dot.accent-toggle.accent:not(.active):focus-visible {
+body.role-host .dot.accent-toggle.accent:not(.active):hover,
+body.role-host .dot.accent-toggle.accent:not(.active):focus-visible {
     transform: scale(1.08);
 }
 
-.dot.accent-toggle:not(.accent):not(.active):hover,
-.dot.accent-toggle:not(.accent):not(.active):focus-visible {
+body.role-host .dot.accent-toggle:not(.accent):not(.active):hover,
+body.role-host .dot.accent-toggle:not(.accent):not(.active):focus-visible {
     opacity: 1;
     border-color: var(--accent);
     transform: scale(1.08);

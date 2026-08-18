@@ -14,7 +14,7 @@
   <h1>Synced Metronome</h1>
   <div class="version-display" id="versionDisplay">v...</div>
   <div class="version-meta">
-    <p>Last Modified: 2026-08-16</p>
+    <p>Last Modified: 2026-08-17</p>
     <p>Developer: Hye Sung Moon</p>
   </div>
   <div class="connection-status" id="connectionStatus">
@@ -369,29 +369,35 @@
       if (i === 0) {
         dot.classList.add('accent-toggle');
         dot.classList.toggle('accent', accentEnabled);
-        dot.setAttribute('role', 'button');
-        dot.setAttribute('tabindex', '0');
-        dot.setAttribute('aria-pressed', String(accentEnabled));
-        dot.title = accentEnabled ? 'Accent beat on — click to turn off (B)' : 'Accent beat off — click to turn on (B)';
-        dot.addEventListener('click', toggleAccent);
-        dot.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            toggleAccent();
-          }
-        });
+        if (role === 'host') {
+          dot.setAttribute('role', 'button');
+          dot.setAttribute('tabindex', '0');
+          dot.setAttribute('aria-pressed', String(accentEnabled));
+          dot.title = accentEnabled ? 'Accent beat on — click to turn off (B)' : 'Accent beat off — click to turn on (B)';
+          dot.addEventListener('click', toggleAccent);
+          dot.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              toggleAccent();
+            }
+          });
+        } else {
+          dot.title = accentEnabled ? 'Accent beat on (set by host)' : 'Accent beat off (set by host)';
+        }
       }
       container.appendChild(dot);
     }
   }
 
   // Toggle whether beat 1 gets the accent (louder/higher-pitched) treatment.
-  // Purely a local playback preference — each device schedules its own
-  // click locally, so this isn't synced between host and followers. Not
-  // persisted: every fresh page load starts with the accent back on.
+  // Host-only: the host's choice is broadcast to all followers via the
+  // server's shared state, same as bpm/timeSignature. Not persisted across
+  // server restarts — every fresh session starts with the accent back on.
   function toggleAccent() {
+    if (role !== 'host') return;
     accentEnabled = !accentEnabled;
     updateBeatDots();
+    socket.emit('setAccentEnabled', { enabled: accentEnabled });
   }
 
   // Highlight the current beat dot
@@ -612,20 +618,41 @@
         lastDriftCheck = now;
         const serverNow = globalNow();
         const intervalMs = (60000 / bpm) / subdivision;
+        const hardwareLatency = (audioCtx.outputLatency || 0) + (audioCtx.baseLatency || 0);
+
+        // Ticks that should already have played by now, per the server clock.
         const elapsedMs = serverNow - startTime;
         const expectedBeat = Math.floor(elapsedMs / intervalMs);
-        const expectedNextTickMs = startTime + (expectedBeat + 1) * intervalMs;
-        const hardwareLatency = (audioCtx.outputLatency || 0) + (audioCtx.baseLatency || 0);
-        const expectedNextTickAudio = now + (expectedNextTickMs - serverNow) / 1000 - hardwareLatency;
-        const drift = nextTick - expectedNextTickAudio;
-        if (Math.abs(drift) > 0.05) {
-          // Large drift (tab was throttled / audio glitch): hard re-anchor.
-          console.log(`Hard re-anchor: ${(drift * 1000).toFixed(1)}ms`);
-          nextTick = expectedNextTickAudio;
+
+        if (beatCount <= expectedBeat) {
+          // We've fallen behind the wall clock by a full tick or more (tab
+          // was throttled / audio glitch): beatCount/nextTick themselves are
+          // stale, not just offset by the normal scheduling lookahead. Jump
+          // the beat counter forward to the next tick that hasn't happened
+          // yet and re-anchor nextTick to match — a real catch-up.
+          const targetMs = startTime + (expectedBeat + 1) * intervalMs;
+          nextTick = now + (targetMs - serverNow) / 1000 - hardwareLatency;
           beatCount = expectedBeat + 1;
-        } else if (Math.abs(drift) > 0.002) {
-          // Small drift: slew gently toward target to avoid an audible jump.
-          nextTick -= drift * 0.3;
+          console.log(`Hard re-anchor (catch-up): beatCount -> ${beatCount}`);
+        } else {
+          // beatCount is still ahead of expectedBeat, as it should be thanks
+          // to the ~0.3s scheduling lookahead buffer below. Compare nextTick
+          // against where THAT SAME beat should sit on the audio clock —
+          // not "the next tick from right now", which is a different beat
+          // and would always look "late" by about one buffer's worth,
+          // causing a false re-anchor (and a duplicate, already-scheduled
+          // beat) on every check even with perfectly matched clocks.
+          const targetMs = startTime + beatCount * intervalMs;
+          const targetAudio = now + (targetMs - serverNow) / 1000 - hardwareLatency;
+          const drift = nextTick - targetAudio;
+          if (Math.abs(drift) > 0.05) {
+            // Large drift (audio glitch): hard re-anchor, same beat.
+            console.log(`Hard re-anchor: ${(drift * 1000).toFixed(1)}ms`);
+            nextTick = targetAudio;
+          } else if (Math.abs(drift) > 0.002) {
+            // Small drift: slew gently toward target to avoid an audible jump.
+            nextTick -= drift * 0.3;
+          }
         }
       }
 
@@ -659,6 +686,7 @@
     bpm = data.bpm;
     subdivision = data.subdivision || 1;
     timeSignature = data.timeSignature || '4/4';
+    accentEnabled = data.accentEnabled !== undefined ? data.accentEnabled : accentEnabled;
     bpmInput.value = bpm;
     bpmSlider.value = bpm;
     updateSliderFill(bpmSlider);
@@ -889,6 +917,7 @@
     roleChooser.style.display = 'none';
     metronomeControls.style.display = 'block';
     const isHost = r === 'host';
+    document.body.classList.toggle('role-host', isHost);
     document.getElementById("hostControls").style.display = isHost ? 'block' : 'none';
     clientVisuals.style.display = isHost ? 'none' : 'flex';
     document.getElementById("bpmDisplay").style.display = isHost ? 'none' : 'block';
@@ -1068,15 +1097,13 @@
     const isRangeInput = tag === 'input' && target.type === 'range';
     if (!isRangeInput && (tag === 'input' || tag === 'select' || tag === 'textarea')) return;
 
-    // Accent toggle is a local playback preference, so it works for both
-    // host and follower — everything else below only makes sense for host.
+    if (role !== 'host') return;
+
     if (e.key.toLowerCase() === 'b') {
       e.preventDefault();
       toggleAccent();
       return;
     }
-
-    if (role !== 'host') return;
 
     if (e.code === 'Space') {
       e.preventDefault();
