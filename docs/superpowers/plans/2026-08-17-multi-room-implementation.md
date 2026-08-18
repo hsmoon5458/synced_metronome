@@ -1146,7 +1146,13 @@ Replace with:
 
 - [ ] **Step 10: Auto-join on load if the URL already names a room**
 
-Find the `renderJoinQR()` self-invoking call site (now removed in Step 6) — in its place, at the same point in the script (right after the DOM element `const` lookups, before the BPM slider wiring), add:
+Find (this comment immediately follows the `renderJoinQR` function from Step 6 — it is unchanged by Step 6, still present verbatim right after it):
+
+```javascript
+  // Slider fill logic
+```
+
+Insert the following block immediately BEFORE that line (i.e. between the closing `}` of `renderJoinQR` and the `// Slider fill logic` comment):
 
 ```javascript
   // If we landed on /r/N (a shared link or QR scan), join it immediately —
@@ -1157,6 +1163,7 @@ Find the `renderJoinQR()` self-invoking call site (now removed in Step 6) — in
       attemptJoinRoom(urlRoomId);
     }
   })();
+
 ```
 
 - [ ] **Step 11: Add Enter-to-submit on the manual room input**
