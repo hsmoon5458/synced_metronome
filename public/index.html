@@ -1070,13 +1070,16 @@
   }
 
   function attemptJoinRoom(roomId) {
-    socket.emit('joinRoom', { roomId }, (response) => {
-      if (response && response.ok) {
-        updateRoomUrl(roomId);
-        setRole('client', roomId);
-      } else {
-        showRoomNotFound(roomId);
-      }
+    ensureTimeSynced().then((ok) => {
+      if (!ok) return;
+      socket.emit('joinRoom', { roomId }, (response) => {
+        if (response && response.ok) {
+          updateRoomUrl(roomId);
+          setRole('client', roomId);
+        } else {
+          showRoomNotFound(roomId);
+        }
+      });
     });
   }
 

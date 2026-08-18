@@ -166,6 +166,8 @@ io.on('connection', (socket) => {
 
   if (socket.data.roomId == null) {
     socket.emit('roomList', roomManager.listRooms());
+    const defaultRoom = roomManager.getRoom(DEFAULT_ROOM_ID);
+    socket.emit('hostAvailability', defaultRoom.hostSocketId === null);
   }
 
   // Time synchronization round-trip (NTP-style, 4 timestamps).
@@ -184,7 +186,7 @@ io.on('connection', (socket) => {
   // out to be dead) -- fails with { error: 'room_taken' } if it's already
   // in use.
   socket.on('createRoom', (data, callback) => {
-    const requestedId = data && data.roomId;
+    const requestedId = Number.isInteger(data && data.roomId) && data.roomId > DEFAULT_ROOM_ID ? data.roomId : null;
     const roomId = requestedId ? roomManager.createRoomWithId(requestedId) : roomManager.createRoom();
     if (roomId == null) {
       if (typeof callback === 'function') callback({ error: 'room_taken' });
@@ -193,6 +195,7 @@ io.on('connection', (socket) => {
     const room = roomManager.getRoom(roomId);
     joinSocketToRoom(socket, roomId);
     claimHost(socket, roomId, room);
+    socket.emit('sync', buildSyncPayload(room));
     console.log(`Room ${roomId} created, hosted by ${socket.id}`);
     broadcastRoomList();
     if (typeof callback === 'function') callback({ roomId });
@@ -200,8 +203,8 @@ io.on('connection', (socket) => {
 
   // Join an existing room as a follower.
   socket.on('joinRoom', (data, callback) => {
-    const roomId = data && data.roomId;
-    const room = roomManager.getRoom(roomId);
+    const roomId = Number.isInteger(data && data.roomId) ? data.roomId : null;
+    const room = roomId != null ? roomManager.getRoom(roomId) : null;
     if (!room) {
       if (typeof callback === 'function') callback({ ok: false, error: 'not_found' });
       return;
@@ -302,6 +305,7 @@ io.on('connection', (socket) => {
       console.log(`Metronome started in room ${roomId} at`, new Date(room.metronomeState.startTime).toISOString());
 
       io.to(`room:${roomId}`).emit('sync', buildSyncPayload(room));
+      if (!roomManager.isPermanent(roomId)) broadcastRoomList();
     } else {
       console.log(`Non-host client ${socket.id} attempted to start metronome`);
     }
@@ -317,6 +321,7 @@ io.on('connection', (socket) => {
       console.log(`Metronome stopped by host of room ${roomId}`);
 
       io.to(`room:${roomId}`).emit('sync', buildSyncPayload(room, { startTime: null }));
+      if (!roomManager.isPermanent(roomId)) broadcastRoomList();
     } else {
       console.log(`Non-host client ${socket.id} attempted to stop metronome`);
     }
