@@ -25,15 +25,27 @@
 
   <div class="card">
     <div id="roleChooser">
-      <div class="button-group">
-        <button id="btnChooseHost" onclick="setRole('host')">Host<span class="role-desc">Control the session</span></button>
-        <button id="btnChooseClient" onclick="setRole('client')">Follow<span class="role-desc">Join and listen</span></button>
+      <div id="landingChooser">
+        <div class="button-group">
+          <button id="btnChooseHost" onclick="handleCreateRoom()">Host<span class="role-desc">Start a new room</span></button>
+          <button id="btnChooseClient" onclick="showManualJoin()">Follow<span class="role-desc">Join a room</span></button>
+        </div>
+        <div id="manualJoin" style="display:none;">
+          <input type="number" id="manualRoomInput" inputmode="numeric" placeholder="Room number">
+          <button id="manualJoinButton" onclick="handleManualJoin()">Join</button>
+        </div>
+        <div id="roomListSection">
+          <h3>Open Rooms</h3>
+          <ul id="roomList"></ul>
+          <p id="roomListEmpty" style="display:none;">No active rooms — create one!</p>
+        </div>
       </div>
-      <p id="hostTakenMsg" style="display:none; color:#d32f2f; margin-top:0.5rem; font-size:0.9rem;">Host role is currently occupied.</p>
-      <div id="qrJoin">
-        <div id="qrCode"></div>
-        <p class="qr-label">Scan to join on another device</p>
-        <p class="qr-url" id="qrUrl"></p>
+      <div id="roomNotFound" style="display:none;">
+        <p>Room <span id="notFoundRoomId"></span> wasn't found.</p>
+        <div class="button-group">
+          <button onclick="handleHostFallback()">Host this room instead</button>
+          <button onclick="goToLanding()">Go home</button>
+        </div>
       </div>
     </div>
 
@@ -54,12 +66,21 @@
         </div>
       </div>
       <div id="statusInfo">
+        <p id="roomIdStatusDisplay"></p>
         <p id="statusDisplay"></p>
         <p id="latencyDisplay"></p>
       </div>
     </div>
 
     <div id="hostControls" style="display:none;">
+      <div id="roomInfo">
+        <h2 id="roomIdDisplay"></h2>
+        <div id="qrJoin">
+          <div id="qrCode"></div>
+          <p class="qr-label">Scan to join on another device</p>
+          <p class="qr-url" id="qrUrl"></p>
+        </div>
+      </div>
       <div class="settings-grid">
         <div class="form-group">
           <div class="bpm-controls" id="bpmControls" style="display: flex;">
@@ -131,6 +152,8 @@
   let startTime = null;
   let nextTick = 0;
   let role = null;
+  let currentRoomId = null;
+  let pendingHostRoomId = null; // set by showRoomNotFound(); used by handleHostFallback()
   let tickTimer = null;
   let subdivision = 2;
   let timeSignature = '4/4';
@@ -151,8 +174,6 @@
   const stopButton = document.getElementById('stopButton');
   const clientVisuals = document.getElementById('clientVisuals');
   const noSleep = new NoSleep();
-  const btnChooseHost = document.getElementById('btnChooseHost');
-  const hostTakenMsg = document.getElementById('hostTakenMsg');
 
   // Fetch and display version from server
   fetch('/version')
@@ -162,15 +183,16 @@
     })
     .catch(err => console.error('Failed to fetch version:', err));
 
-  // Render a QR code (home screen) pointing at this live URL so other phones
-  // can scan to join the session. Uses window.location so it's always correct
-  // for wherever the app is actually served.
-  (function renderJoinQR() {
-    const joinUrl = window.location.href.split('#')[0];
+  // Renders a QR code + link pointing at a specific room's join URL. Called
+  // once a host actually has a room number (there's nothing to share before
+  // that), unlike the old version which rendered unconditionally at load.
+  function renderJoinQR(roomId) {
+    const joinUrl = `${window.location.origin}/r/${roomId}`;
     const urlEl = document.getElementById('qrUrl');
-    if (urlEl) urlEl.textContent = joinUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
+    if (urlEl) urlEl.textContent = joinUrl.replace(/^https?:\/\//, '');
     const target = document.getElementById('qrCode');
     if (target && typeof QRCode !== 'undefined') {
+      target.innerHTML = '';
       new QRCode(target, {
         text: joinUrl,
         width: 168,
@@ -185,7 +207,23 @@
       if (wrap) wrap.style.display = 'none';
       console.warn('QR library unavailable; join QR hidden.');
     }
+  }
+
+  // If we landed on /r/N (a shared link or QR scan), join it immediately —
+  // no chooser click needed. Bare '/' leaves the landing chooser showing.
+  (function autoJoinFromUrl() {
+    const urlRoomId = parseRoomIdFromPath();
+    if (urlRoomId) {
+      attemptJoinRoom(urlRoomId);
+    }
   })();
+
+  document.getElementById('manualRoomInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleManualJoin();
+    }
+  });
 
   // Slider fill logic
   function updateSliderFill(slider) {
@@ -839,10 +877,16 @@
   // Re-identify role and re-sync on socket reconnection
   socket.on('connect', () => {
     updateConnectionStatus(true);
+    if (!timeSynced) {
+      // Warm up the disciplined clock in the background as soon as we're
+      // connected, even before a room is chosen, so it's ready by the time
+      // Host/Follow is picked.
+      syncTime(true);
+    }
     if (role) {
-      socket.emit('identify', role);
-      // Re-sync on reconnect for both roles — the socket (and thus the sync
-      // round-trip path) is new, so refresh the clock estimate.
+      socket.emit('identify', { role, roomId: currentRoomId });
+      // Re-sync on reconnect for both roles — the socket (and thus the
+      // sync round-trip path) is new, so refresh the clock estimate.
       syncTime(true);
     }
   });
@@ -851,20 +895,33 @@
     updateConnectionStatus(false);
   });
 
-  socket.on('hostAvailability', (isAvailable) => {
-    if (role) return; // Only update if still in role selection screen
-    
-    if (isAvailable) {
-      btnChooseHost.disabled = false;
-      btnChooseHost.innerHTML = 'Host<span class="role-desc">Control the session</span>';
-      btnChooseHost.title = "";
-      hostTakenMsg.style.display = 'none';
-    } else {
-      btnChooseHost.disabled = true;
-      btnChooseHost.innerHTML = 'Host (Occupied)<span class="role-desc">Another user is hosting</span>';
-      btnChooseHost.title = "Another user is already the host";
-      hostTakenMsg.style.display = 'block';
-    }
+  // No client-side reaction needed to hostAvailability any more: creating a
+  // room on the landing page always succeeds (it's always a fresh room), so
+  // there's no "occupied" state to reflect before you've even joined one.
+  // The event is still sent (a follower's room might currently be
+  // hostless/mid-grace-period) but nothing here needs it today.
+  socket.on('hostAvailability', () => {});
+
+  socket.on('roomClosed', (data) => {
+    const reason = data && data.reason;
+    currentRoomId = null;
+    role = null;
+    isRunning = false;
+    if (tickTimer) { clearTimeout(tickTimer); tickTimer = null; }
+    if (syncTimeout) { clearTimeout(syncTimeout); syncTimeout = null; }
+    releaseScreenWake();
+    document.body.classList.remove('role-host');
+    document.body.classList.toggle('playing', false);
+    metronomeControls.style.display = 'none';
+    document.getElementById('hostControls').style.display = 'none';
+    roleChooser.style.display = 'block';
+    document.getElementById('roomNotFound').style.display = 'none';
+    document.getElementById('landingChooser').style.display = 'block';
+    window.history.pushState({}, '', '/');
+    const message = reason === 'host_left'
+      ? 'The host left — this room has closed.'
+      : 'This room is no longer available.';
+    alert(message);
   });
 
   function updateSettings() {
@@ -921,8 +978,37 @@
     socket.emit('stopMetronome');
   }
 
-  function setRole(r) {
+  function parseRoomIdFromPath() {
+    const m = window.location.pathname.match(/^\/r\/(\d+)$/);
+    return m ? parseInt(m[1], 10) : null;
+  }
+
+  function updateRoomUrl(roomId) {
+    const newPath = `/r/${roomId}`;
+    if (window.location.pathname !== newPath) {
+      window.history.pushState({ roomId }, '', newPath);
+    }
+  }
+
+  function goToLanding() {
+    window.history.pushState({}, '', '/');
+    pendingHostRoomId = null;
+    document.getElementById('roomNotFound').style.display = 'none';
+    document.getElementById('landingChooser').style.display = 'block';
+  }
+
+  function ensureTimeSynced() {
+    if (timeSynced) return Promise.resolve(true);
+    return syncTime();
+  }
+
+  // Sets up the room UI once a room has actually been joined (after a
+  // createRoom/joinRoom ack succeeds). Unlike the old setRole(r), this no
+  // longer does any socket.emit itself -- that already happened via
+  // createRoom/joinRoom's callback.
+  function setRole(r, roomId) {
     role = r;
+    currentRoomId = roomId;
     roleChooser.style.display = 'none';
     metronomeControls.style.display = 'block';
     const isHost = r === 'host';
@@ -934,11 +1020,70 @@
     updateBeatDots();
     updateTimeSignatureVisual(timeSignature);
     updateSubdivisionVisual(subdivision);
-    syncTime().then((success) => {
-      if (success) {
-        socket.emit('identify', r);
-        startPeriodicReSync();
+
+    const label = `Room ${roomId}`;
+    const roomIdDisplay = document.getElementById('roomIdDisplay');
+    if (roomIdDisplay) roomIdDisplay.textContent = label;
+    const roomIdStatusDisplay = document.getElementById('roomIdStatusDisplay');
+    if (roomIdStatusDisplay) roomIdStatusDisplay.textContent = label;
+    if (isHost) renderJoinQR(roomId);
+
+    startPeriodicReSync();
+  }
+
+  function attemptJoinRoom(roomId) {
+    socket.emit('joinRoom', { roomId }, (response) => {
+      if (response && response.ok) {
+        updateRoomUrl(roomId);
+        setRole('client', roomId);
+      } else {
+        showRoomNotFound(roomId);
       }
+    });
+  }
+
+  function showManualJoin() {
+    document.getElementById('manualJoin').style.display = 'flex';
+    document.getElementById('manualRoomInput').focus();
+  }
+
+  function handleManualJoin() {
+    const input = document.getElementById('manualRoomInput');
+    const roomId = parseInt(input.value, 10);
+    if (!roomId || roomId < 1) return;
+    attemptJoinRoom(roomId);
+  }
+
+  function showRoomNotFound(roomId) {
+    pendingHostRoomId = roomId;
+    document.getElementById('landingChooser').style.display = 'none';
+    document.getElementById('roomNotFound').style.display = 'block';
+    document.getElementById('notFoundRoomId').textContent = roomId;
+  }
+
+  function handleCreateRoom() {
+    ensureTimeSynced().then((ok) => {
+      if (!ok) return;
+      socket.emit('createRoom', {}, (response) => {
+        updateRoomUrl(response.roomId);
+        setRole('host', response.roomId);
+      });
+    });
+  }
+
+  function handleHostFallback() {
+    const roomId = pendingHostRoomId;
+    if (!roomId) return;
+    ensureTimeSynced().then((ok) => {
+      if (!ok) return;
+      socket.emit('createRoom', { roomId }, (response) => {
+        if (response && response.roomId) {
+          updateRoomUrl(response.roomId);
+          setRole('host', response.roomId);
+        } else {
+          alert('That room number was just claimed by someone else. Please try again.');
+        }
+      });
     });
   }
 
