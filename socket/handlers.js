@@ -77,33 +77,38 @@ function registerSocketHandlers(io, roomManager) {
     });
 
     // Handle role identification: { role, roomId }. Mainly used to reclaim
-    // a room/host seat after a reconnect — the room must already exist.
-    socket.on('identify', (payload) => {
+    // a room/host seat after a reconnect or a host's own page refresh (see
+    // claimHost's grace-period reclaim) — the room must already exist.
+    // Optional ack: { ok: true } or { ok: false, error: 'not_found' | 'host_taken' }.
+    socket.on('identify', (payload, callback) => {
       const role = payload && payload.role;
       const roomId = payload && payload.roomId;
+      const ack = (response) => { if (typeof callback === 'function') callback(response); };
 
       const room = roomId != null ? roomManager.getRoom(roomId) : null;
       if (!room) {
         removeSocketFromRoom(socket);
         socket.join('lobby');
         socket.emit('roomClosed', { reason: 'not_found' });
+        ack({ ok: false, error: 'not_found' });
         return;
       }
 
       joinSocketToRoom(socket, roomId);
 
+      let claimed = true;
       if (role === 'host') {
-        const claimed = claimHost(socket, roomId, room);
+        claimed = claimHost(socket, roomId, room);
         if (!claimed) {
           console.log(`Client ${socket.id} attempted to become host of room ${roomId}, but a host already exists`);
           socket.emit('hostStatus', { isHost: false, message: 'Another host is already connected' });
-          return;
         }
       }
 
       socket.emit('hostAvailability', room.hostSocketId === null);
       socket.emit('sync', buildSyncPayload(room));
       broadcastRoomList();
+      ack(claimed ? { ok: true } : { ok: false, error: 'host_taken' });
     });
 
     // Handle accent beat enable/disable — host-only, mirrors updateSettings.

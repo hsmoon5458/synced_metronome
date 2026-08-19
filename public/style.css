@@ -919,24 +919,6 @@ select:focus {
     margin-top: 0.5rem;
 }
 
-/* ── Manual room-number entry ── */
-#manualJoin {
-    display: flex;
-    gap: 0.5rem;
-    max-width: 280px;
-    margin: 1rem auto 0;
-}
-
-#manualRoomInput {
-    flex: 1;
-    padding: 0.7rem 0.9rem;
-    border-radius: 0.8rem;
-    border: 1px solid var(--bg-card-border);
-    background: var(--bg-input);
-    color: var(--primary);
-    font-size: 1rem;
-}
-
 /* ── Room-not-found fallback panel ── */
 #roomNotFound {
     padding: 1rem 0;

@@ -80,22 +80,28 @@ function createRoomLifecycle(io, roomManager) {
     socket.data.roomId = null;
   }
 
-  // Claims the host seat of `room` for `socket`, if it's free or if this is
+  // Claims the host seat of `room` for `socket`, if it's free, if this is
   // the same host reclaiming within the grace period (recovered session /
   // re-identify keeps the same socket.id — see connectionStateRecovery in
-  // server.js). Returns false if someone else already holds it.
+  // server.js), or if the room is mid-grace-period at all (hostGraceTimer
+  // set). That last case covers a host's own hard page refresh: the old
+  // socket disconnects and a brand new one reconnects, so it can never match
+  // by socket.id — without this, a host who refreshes loses their seat and
+  // gets kicked out ~HOST_GRACE_MS later along with everyone else. Returns
+  // false only if someone else already holds a *live* host seat.
   function claimHost(socket, roomId, room) {
     const isReclaim = room.hostSocketId === socket.id;
     const isNewHost = room.hostSocketId === null;
-    if (!isNewHost && !isReclaim) return false;
+    const isPendingGrace = !!room.hostGraceTimer;
+    if (!isNewHost && !isReclaim && !isPendingGrace) return false;
 
     room.hostSocketId = socket.id;
     cancelHostGraceTimer(room);
-    if (isNewHost) {
+    if (isReclaim) {
+      console.log(`Host reclaimed seat in room ${roomId} within grace period: ${socket.id}`);
+    } else {
       console.log(`Host identified for room ${roomId}: ${socket.id}`);
       io.to(`room:${roomId}`).emit('hostAvailability', false);
-    } else {
-      console.log(`Host reclaimed seat in room ${roomId} within grace period: ${socket.id}`);
     }
     return true;
   }

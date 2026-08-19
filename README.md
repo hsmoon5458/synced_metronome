@@ -31,7 +31,11 @@ smallest-first, starting at `DEFAULT_ROOM_ID = 1`). `roomState` =
 `{ metronomeState, hostSocketId, clients: Set<socketId>, hostGraceTimer }`.
 Every room closes for good once its host is confirmed gone (15s grace
 period, `HOST_GRACE_MS` in `socket/roomLifecycle.js`) and its number goes
-back into the pool.
+back into the pool. `claimHost()` also lets a *different* socket claim the
+seat while `hostGraceTimer` is still pending (not just the exact same
+`socket.id` reconnecting) — that's what lets a host's own hard page refresh
+reclaim the room instead of losing it; see the client-side half in
+`attemptRejoinAsHost()`/`sessionStorage['hostedRoomId']` in `index.html`.
 
 **Socket-to-room binding.** Each socket lives in one Socket.IO room
 (`room:${roomId}`) plus, when unassigned, a shared `lobby` room used to push
@@ -40,9 +44,14 @@ the live room list. `socket.data.roomId` tracks current membership.
 `socket/handlers.js` wires socket events to them.
 
 **Web client.** Single inline `<script>` in `public/index.html`, no bundler.
-Landing page (`/`) shows a live room list + create/join. `/r/:roomId` (SPA
-fallback route in `server.js`) auto-joins that room as a follower unless the
-URL was reached via host-created-room `pushState`. Asset paths in
+Landing page (`/`) has one "Host" button (creates a room) and a live "Open
+Rooms" list — followers join by clicking a row; there's no manual
+room-number entry and no generic "Follow" mode, so a follower with nothing
+to click has nothing to join. `/r/:roomId` (SPA fallback route in
+`server.js`) auto-joins that room on load, as host or follower depending on
+`sessionStorage['hostedRoomId']` (see attemptRejoinAsHost above) — this is
+also what a host's own `pushState` produces after creating a room, and what
+a shared link/QR scan produces for everyone else. Asset paths in
 `index.html` **must be root-relative** (`/style.css`, `/icons/x.svg`) — a
 follower's page URL is `/r/N`, and a relative path there resolves against
 the wrong base and 404s. (This exact bug shipped once; don't reintroduce it.)
@@ -58,7 +67,7 @@ server-clock correction to its own local scheduling; followers do.
 |---|---|---|---|
 | `createRoom` | c→s | `{ roomId? }` | Ack `{ roomId }` or `{ error: 'room_taken' }`. |
 | `joinRoom` | c→s | `{ roomId }` | Ack `{ ok: true }` or `{ ok: false, error: 'not_found' }`. |
-| `identify` | c→s | `{ role, roomId }` | Reclaims a room/host seat after a reconnect. |
+| `identify` | c→s | `{ role, roomId }` | Ack `{ ok: true }` or `{ ok: false, error: 'not_found' \| 'host_taken' }`. Reclaims a room/host seat after a reconnect or page refresh. |
 | `setAccentEnabled` | c→s | `{ enabled }` | Host-only, silently ignored otherwise. |
 | `updateSettings` | c→s | `{ bpm, timeSignature, subdivision, startTime? }` | Host-only. |
 | `startMetronome` / `stopMetronome` | c→s | — | Host-only. |

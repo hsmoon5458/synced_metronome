@@ -28,11 +28,6 @@
       <div id="landingChooser">
         <div class="button-group">
           <button id="btnChooseHost" onclick="handleCreateRoom()">Host<span class="role-desc">Start a new room</span></button>
-          <button id="btnChooseClient" onclick="showManualJoin()">Follow<span class="role-desc">Join a room</span></button>
-        </div>
-        <div id="manualJoin" style="display:none;">
-          <input type="number" id="manualRoomInput" inputmode="numeric" placeholder="Room number">
-          <button id="manualJoinButton" onclick="handleManualJoin()">Join</button>
         </div>
         <div id="roomListSection">
           <h3>Open Rooms</h3>
@@ -209,21 +204,22 @@
     }
   }
 
-  // If we landed on /r/N (a shared link or QR scan), join it immediately —
-  // no chooser click needed. Bare '/' leaves the landing chooser showing.
+  // If we landed on /r/N (a shared link, QR scan, or a host's own page
+  // refresh), join it immediately — no chooser click needed. Bare '/'
+  // leaves the landing chooser showing. If this exact tab was the host of
+  // this exact room (sessionStorage survives a refresh, unlike the in-memory
+  // `role`/`currentRoomId` vars, which reset on reload), try to reclaim the
+  // host seat instead of joining as a follower — see attemptRejoinAsHost().
   (function autoJoinFromUrl() {
     const urlRoomId = parseRoomIdFromPath();
-    if (urlRoomId) {
+    if (!urlRoomId) return;
+    const hostedRoomId = sessionStorage.getItem('hostedRoomId');
+    if (hostedRoomId != null && Number(hostedRoomId) === urlRoomId) {
+      attemptRejoinAsHost(urlRoomId);
+    } else {
       attemptJoinRoom(urlRoomId);
     }
   })();
-
-  document.getElementById('manualRoomInput').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleManualJoin();
-    }
-  });
 
   // Slider fill logic
   function updateSliderFill(slider) {
@@ -904,6 +900,7 @@
 
   socket.on('roomClosed', (data) => {
     const reason = data && data.reason;
+    sessionStorage.removeItem('hostedRoomId');
     currentRoomId = null;
     role = null;
     isRunning = false;
@@ -1030,6 +1027,7 @@
 
   function goToLanding() {
     window.history.pushState({}, '', '/');
+    sessionStorage.removeItem('hostedRoomId');
     pendingHostRoomId = null;
     document.getElementById('roomNotFound').style.display = 'none';
     document.getElementById('landingChooser').style.display = 'block';
@@ -1066,6 +1064,16 @@
     if (roomIdStatusDisplay) roomIdStatusDisplay.textContent = label;
     if (isHost) renderJoinQR(roomId);
 
+    // Lets a hard page refresh on /r/N reclaim the host seat instead of
+    // silently falling back to "follower with no host" (see
+    // attemptRejoinAsHost()) — `role`/`currentRoomId` above are in-memory
+    // and don't survive a reload, but sessionStorage does.
+    if (isHost) {
+      sessionStorage.setItem('hostedRoomId', String(roomId));
+    } else {
+      sessionStorage.removeItem('hostedRoomId');
+    }
+
     startPeriodicReSync();
   }
 
@@ -1083,16 +1091,22 @@
     });
   }
 
-  function showManualJoin() {
-    document.getElementById('manualJoin').style.display = 'flex';
-    document.getElementById('manualRoomInput').focus();
-  }
-
-  function handleManualJoin() {
-    const input = document.getElementById('manualRoomInput');
-    const roomId = parseInt(input.value, 10);
-    if (!roomId || roomId < 1) return;
-    attemptJoinRoom(roomId);
+  // Used only on load for a /r/N URL this exact tab previously hosted (see
+  // autoJoinFromUrl). Tries to reclaim the host seat via 'identify'; if that
+  // fails (someone else is already host, or the room's gone) falls back to
+  // the normal follower join, which handles both cases correctly on its own.
+  function attemptRejoinAsHost(roomId) {
+    ensureTimeSynced().then((ok) => {
+      if (!ok) return;
+      socket.emit('identify', { role: 'host', roomId }, (response) => {
+        if (response && response.ok) {
+          updateRoomUrl(roomId);
+          setRole('host', roomId);
+        } else {
+          attemptJoinRoom(roomId);
+        }
+      });
+    });
   }
 
   function showRoomNotFound(roomId) {
