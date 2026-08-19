@@ -28,27 +28,27 @@ app can't run (see Node version note below).
 **Rooms.** `RoomManager` (`rooms.js`) owns a `Map<roomId, roomState>` plus a
 number allocator (`nextRoomNumber` high-water mark + `freedPool` for reuse,
 smallest-first, starting at `DEFAULT_ROOM_ID = 1`). `roomState` =
-`{ metronomeState, hostSocketId, hostToken, clients: Set<socketId>,
-hostGraceTimer }`. Every room closes for good once its host is confirmed
-gone (15s grace period, `HOST_GRACE_MS` in `socket/roomLifecycle.js`) and
-its number goes back into the pool.
+`{ metronomeState, hostSocketId, clients: Set<socketId>, hostGraceTimer }`.
+Every room closes for good once its host is confirmed gone (15s grace
+period, `HOST_GRACE_MS` in `socket/roomLifecycle.js`) and its number goes
+back into the pool. `claimHost()` also lets a *different* socket reclaim
+while `hostGraceTimer` is pending (an in-page reconnect that got a new
+socket.id because `connectionStateRecovery` didn't apply) — but a hard page
+refresh never reaches this path at all; see below.
 
-**Host reclaim / `hostToken`.** A host's hard page refresh disconnects the
-old socket and connects a brand new one with a different `socket.id` — so
-`claimHost()` can't rely on socket.id matching to let it back in. It also
-can't rely on `hostGraceTimer` being set yet: the old socket's disconnect
-isn't always detected server-side before the refreshed page reconnects
-(transport heartbeat timeout can take far longer than a refresh does), so
-`hostSocketId` may still point at the now-dead old socket with no grace
-period started at all. The real fix is `hostToken`: a random string
-`claimHost()` issues whenever a room gets a genuinely new host, which the
-client stashes in `sessionStorage['hostToken']` (alongside
-`sessionStorage['hostedRoomId']`, checked in `autoJoinFromUrl()`) and
-resends on `identify` after a reload — see `attemptRejoinAsHost()` in
-`index.html`. A token match is accepted regardless of grace-timer/socket.id
-state; token is re-issued (invalidating any stale one) on every claim that
-isn't a proven reclaim, so an old host's stale token can't hijack the seat
-back from whoever legitimately holds it now.
+**A browser refresh always goes home, for host and follower alike.**
+`autoJoinFromUrl()` in `index.html` uses the Navigation Timing API
+(`performance.getEntriesByType('navigation')[0].type === 'reload'`) to tell
+a refresh apart from a fresh navigation (clicking a shared link/QR scan, or
+typing the URL, both report `'navigate'`). On a detected reload it just
+`replaceState`s the URL back to `/` and stops — no rejoin attempt, no
+special host-reclaim path. This was a deliberate simplification: an earlier
+version tried to let a refreshing host reclaim the same room (via a
+`hostToken` proving it was the same tab), but reasoning about a page reload
+racing against server-side disconnect detection turned out to be more
+complexity than the feature was worth. If you need that behavior back, it's
+in git history (search the commit that added/removed `hostToken`) — but
+prefer solving it differently if you can.
 
 **Socket-to-room binding.** Each socket lives in one Socket.IO room
 (`room:${roomId}`) plus, when unassigned, a shared `lobby` room used to push
@@ -61,13 +61,14 @@ Landing page (`/`) has one "Host" button (creates a room) and a live "Open
 Rooms" list — followers join by clicking a row; there's no manual
 room-number entry and no generic "Follow" mode, so a follower with nothing
 to click has nothing to join. `/r/:roomId` (SPA fallback route in
-`server.js`) auto-joins that room on load, as host or follower depending on
-`sessionStorage['hostedRoomId']` (see attemptRejoinAsHost above) — this is
-also what a host's own `pushState` produces after creating a room, and what
-a shared link/QR scan produces for everyone else. Asset paths in
-`index.html` **must be root-relative** (`/style.css`, `/icons/x.svg`) — a
-follower's page URL is `/r/N`, and a relative path there resolves against
-the wrong base and 404s. (This exact bug shipped once; don't reintroduce it.)
+`server.js`) auto-joins that room as a follower on a fresh navigation (see
+the refresh note above for reloads) — this covers a shared link, a QR scan,
+and the URL a host's own `pushState` produces after creating a room (which
+never triggers a real page load, so `autoJoinFromUrl` doesn't run for it).
+Asset paths in `index.html` **must be root-relative** (`/style.css`,
+`/icons/x.svg`) — a follower's page URL is `/r/N`, and a relative path
+there resolves against the wrong base and 404s. (This exact bug shipped
+once; don't reintroduce it.)
 
 **Time sync.** NTP-style 4-timestamp round-trip over the `timeSync` socket
 event (client t0 → server stamps t1/t2 → client stamps t3, computes
@@ -78,9 +79,9 @@ server-clock correction to its own local scheduling; followers do.
 
 | Event | Dir | Payload | Notes |
 |---|---|---|---|
-| `createRoom` | c→s | `{ roomId? }` | Ack `{ roomId, hostToken }` or `{ error: 'room_taken' }`. |
+| `createRoom` | c→s | `{ roomId? }` | Ack `{ roomId }` or `{ error: 'room_taken' }`. |
 | `joinRoom` | c→s | `{ roomId }` | Ack `{ ok: true }` or `{ ok: false, error: 'not_found' }`. |
-| `identify` | c→s | `{ role, roomId, hostToken? }` | Ack `{ ok: true, hostToken }` or `{ ok: false, error: 'not_found' \| 'host_taken' }`. Reclaims a room/host seat after a reconnect or page refresh. |
+| `identify` | c→s | `{ role, roomId }` | No ack. Reclaims a room/host seat after an in-page reconnect (not used for page reloads — see the refresh note above). |
 | `setAccentEnabled` | c→s | `{ enabled }` | Host-only, silently ignored otherwise. |
 | `updateSettings` | c→s | `{ bpm, timeSignature, subdivision, startTime? }` | Host-only. |
 | `startMetronome` / `stopMetronome` | c→s | — | Host-only. |

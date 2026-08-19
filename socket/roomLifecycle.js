@@ -7,12 +7,6 @@
 // the room for everyone else.
 const HOST_GRACE_MS = 15000;
 
-// Not a security credential — just enough entropy that a client can't
-// plausibly guess another room's token. See claimHost() for how it's used.
-function generateHostToken() {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-}
-
 function createRoomLifecycle(io, roomManager) {
   function cancelHostGraceTimer(room) {
     if (room.hostGraceTimer) {
@@ -88,41 +82,20 @@ function createRoomLifecycle(io, roomManager) {
 
   // Claims the host seat of `room` for `socket`, if it's free, if this is
   // the same host reclaiming (recovered session / re-identify keeps the
-  // same socket.id — see connectionStateRecovery in server.js), if the room
-  // is mid-grace-period (hostGraceTimer set, i.e. the previous host's
-  // disconnect has already been detected), or if `providedToken` matches
-  // the room's `hostToken` (issued to whoever last successfully claimed
-  // host, and remembered client-side across a hard page refresh).
-  //
-  // The token check exists because the grace-period check alone isn't
-  // reliable for a refresh: the old socket's disconnect isn't always
-  // detected before the new socket reconnects and re-identifies (transport
-  // heartbeat timeout can take much longer than a refresh does), so
-  // `hostGraceTimer` may still be unset — and `hostSocketId` still points
-  // at the now-dead old socket — at the moment the new one asks to claim.
-  // A token match is unambiguous proof it's the same browser tab picking
-  // its seat back up, so it's allowed to claim even then. Returns false
-  // only if someone else already holds a *live* host seat with no token
-  // proving otherwise.
-  function claimHost(socket, roomId, room, providedToken) {
+  // same socket.id — see connectionStateRecovery in server.js), or if the
+  // room is mid-grace-period (hostGraceTimer set, i.e. the previous host's
+  // disconnect has already been detected and they haven't reclaimed within
+  // HOST_GRACE_MS yet). Returns false only if someone else already holds a
+  // live host seat.
+  function claimHost(socket, roomId, room) {
     const isReclaim = room.hostSocketId === socket.id;
     const isNewHost = room.hostSocketId === null;
     const isPendingGrace = !!room.hostGraceTimer;
-    const isTokenMatch = !!providedToken && providedToken === room.hostToken;
-    if (!isNewHost && !isReclaim && !isPendingGrace && !isTokenMatch) return false;
+    if (!isNewHost && !isReclaim && !isPendingGrace) return false;
 
     room.hostSocketId = socket.id;
-    if (isReclaim || isTokenMatch) {
-      // Same session picking its seat back up — keep the existing token.
-      if (!room.hostToken) room.hostToken = generateHostToken();
-    } else {
-      // A genuinely new host (fresh room, or someone claiming an abandoned
-      // one) — issue a fresh token so a stale one from the previous host
-      // can't be used to hijack this seat later.
-      room.hostToken = generateHostToken();
-    }
     cancelHostGraceTimer(room);
-    if (isReclaim || isTokenMatch) {
+    if (isReclaim) {
       console.log(`Host reclaimed seat in room ${roomId}: ${socket.id}`);
     } else {
       console.log(`Host identified for room ${roomId}: ${socket.id}`);

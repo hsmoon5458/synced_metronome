@@ -204,21 +204,24 @@
     }
   }
 
-  // If we landed on /r/N (a shared link, QR scan, or a host's own page
-  // refresh), join it immediately — no chooser click needed. Bare '/'
-  // leaves the landing chooser showing. If this exact tab was the host of
-  // this exact room (sessionStorage survives a refresh, unlike the in-memory
-  // `role`/`currentRoomId` vars, which reset on reload), try to reclaim the
-  // host seat instead of joining as a follower — see attemptRejoinAsHost().
+  // If we landed on /r/N (a shared link or QR scan), join it as a follower
+  // immediately — no chooser click needed. Bare '/' leaves the landing
+  // chooser showing. A browser refresh is treated differently: whether you
+  // were host or follower, a refresh sends you back to the landing page
+  // instead of silently rejoining — simpler and more predictable than
+  // trying to reclaim a room (or a host seat) across a reload. The
+  // Navigation Timing API is what distinguishes "refreshed this exact page"
+  // from "navigated here fresh" (link/QR/typed URL all report 'navigate').
   (function autoJoinFromUrl() {
     const urlRoomId = parseRoomIdFromPath();
     if (!urlRoomId) return;
-    const hostedRoomId = sessionStorage.getItem('hostedRoomId');
-    if (hostedRoomId != null && Number(hostedRoomId) === urlRoomId) {
-      attemptRejoinAsHost(urlRoomId);
-    } else {
-      attemptJoinRoom(urlRoomId);
+    const navEntries = performance.getEntriesByType('navigation');
+    const isReload = navEntries.length > 0 && navEntries[0].type === 'reload';
+    if (isReload) {
+      window.history.replaceState({}, '', '/');
+      return;
     }
+    attemptJoinRoom(urlRoomId);
   })();
 
   // Slider fill logic
@@ -900,8 +903,6 @@
 
   socket.on('roomClosed', (data) => {
     const reason = data && data.reason;
-    sessionStorage.removeItem('hostedRoomId');
-    sessionStorage.removeItem('hostToken');
     currentRoomId = null;
     role = null;
     isRunning = false;
@@ -1028,8 +1029,6 @@
 
   function goToLanding() {
     window.history.pushState({}, '', '/');
-    sessionStorage.removeItem('hostedRoomId');
-    sessionStorage.removeItem('hostToken');
     pendingHostRoomId = null;
     document.getElementById('roomNotFound').style.display = 'none';
     document.getElementById('landingChooser').style.display = 'block';
@@ -1044,7 +1043,7 @@
   // createRoom/joinRoom ack succeeds). Unlike the old setRole(r), this no
   // longer does any socket.emit itself -- that already happened via
   // createRoom/joinRoom's callback.
-  function setRole(r, roomId, hostToken) {
+  function setRole(r, roomId) {
     role = r;
     currentRoomId = roomId;
     roleChooser.style.display = 'none';
@@ -1069,19 +1068,6 @@
       renderPresets();
     }
 
-    // Lets a hard page refresh on /r/N reclaim the host seat instead of
-    // silently falling back to "follower with no host" (see
-    // attemptRejoinAsHost()) — `role`/`currentRoomId` above are in-memory
-    // and don't survive a reload, but sessionStorage does. hostToken proves
-    // to the server it's the same tab reclaiming, not just anyone.
-    if (isHost && hostToken) {
-      sessionStorage.setItem('hostedRoomId', String(roomId));
-      sessionStorage.setItem('hostToken', hostToken);
-    } else if (!isHost) {
-      sessionStorage.removeItem('hostedRoomId');
-      sessionStorage.removeItem('hostToken');
-    }
-
     startPeriodicReSync();
   }
 
@@ -1099,29 +1085,6 @@
     });
   }
 
-  // Used only on load for a /r/N URL this exact tab previously hosted (see
-  // autoJoinFromUrl). Tries to reclaim the host seat via 'identify', proving
-  // it's the same tab with the hostToken issued when it first became host
-  // (sessionStorage survives the refresh; the server can't otherwise tell
-  // this apart from a stranger, since the old socket.id is gone and its
-  // disconnect may not even be detected yet — see claimHost). If that fails
-  // (someone else is already host, or the room's gone) falls back to the
-  // normal follower join, which handles both cases correctly on its own.
-  function attemptRejoinAsHost(roomId) {
-    const hostToken = sessionStorage.getItem('hostToken');
-    ensureTimeSynced().then((ok) => {
-      if (!ok) return;
-      socket.emit('identify', { role: 'host', roomId, hostToken }, (response) => {
-        if (response && response.ok) {
-          updateRoomUrl(roomId);
-          setRole('host', roomId, response.hostToken);
-        } else {
-          attemptJoinRoom(roomId);
-        }
-      });
-    });
-  }
-
   function showRoomNotFound(roomId) {
     pendingHostRoomId = roomId;
     document.getElementById('landingChooser').style.display = 'none';
@@ -1134,7 +1097,7 @@
       if (!ok) return;
       socket.emit('createRoom', {}, (response) => {
         updateRoomUrl(response.roomId);
-        setRole('host', response.roomId, response.hostToken);
+        setRole('host', response.roomId);
       });
     });
   }
@@ -1147,7 +1110,7 @@
       socket.emit('createRoom', { roomId }, (response) => {
         if (response && response.roomId) {
           updateRoomUrl(response.roomId);
-          setRole('host', response.roomId, response.hostToken);
+          setRole('host', response.roomId);
         } else {
           alert('That room number was just claimed by someone else. Please try again.');
         }
