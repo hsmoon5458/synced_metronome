@@ -15,6 +15,7 @@ function createRoomState() {
   return {
     metronomeState: createMetronomeState(),
     hostSocketId: null,
+    hostToken: null,
     clients: new Set(),
     hostGraceTimer: null
   };

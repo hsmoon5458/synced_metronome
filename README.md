@@ -28,14 +28,27 @@ app can't run (see Node version note below).
 **Rooms.** `RoomManager` (`rooms.js`) owns a `Map<roomId, roomState>` plus a
 number allocator (`nextRoomNumber` high-water mark + `freedPool` for reuse,
 smallest-first, starting at `DEFAULT_ROOM_ID = 1`). `roomState` =
-`{ metronomeState, hostSocketId, clients: Set<socketId>, hostGraceTimer }`.
-Every room closes for good once its host is confirmed gone (15s grace
-period, `HOST_GRACE_MS` in `socket/roomLifecycle.js`) and its number goes
-back into the pool. `claimHost()` also lets a *different* socket claim the
-seat while `hostGraceTimer` is still pending (not just the exact same
-`socket.id` reconnecting) — that's what lets a host's own hard page refresh
-reclaim the room instead of losing it; see the client-side half in
-`attemptRejoinAsHost()`/`sessionStorage['hostedRoomId']` in `index.html`.
+`{ metronomeState, hostSocketId, hostToken, clients: Set<socketId>,
+hostGraceTimer }`. Every room closes for good once its host is confirmed
+gone (15s grace period, `HOST_GRACE_MS` in `socket/roomLifecycle.js`) and
+its number goes back into the pool.
+
+**Host reclaim / `hostToken`.** A host's hard page refresh disconnects the
+old socket and connects a brand new one with a different `socket.id` — so
+`claimHost()` can't rely on socket.id matching to let it back in. It also
+can't rely on `hostGraceTimer` being set yet: the old socket's disconnect
+isn't always detected server-side before the refreshed page reconnects
+(transport heartbeat timeout can take far longer than a refresh does), so
+`hostSocketId` may still point at the now-dead old socket with no grace
+period started at all. The real fix is `hostToken`: a random string
+`claimHost()` issues whenever a room gets a genuinely new host, which the
+client stashes in `sessionStorage['hostToken']` (alongside
+`sessionStorage['hostedRoomId']`, checked in `autoJoinFromUrl()`) and
+resends on `identify` after a reload — see `attemptRejoinAsHost()` in
+`index.html`. A token match is accepted regardless of grace-timer/socket.id
+state; token is re-issued (invalidating any stale one) on every claim that
+isn't a proven reclaim, so an old host's stale token can't hijack the seat
+back from whoever legitimately holds it now.
 
 **Socket-to-room binding.** Each socket lives in one Socket.IO room
 (`room:${roomId}`) plus, when unassigned, a shared `lobby` room used to push
@@ -65,9 +78,9 @@ server-clock correction to its own local scheduling; followers do.
 
 | Event | Dir | Payload | Notes |
 |---|---|---|---|
-| `createRoom` | c→s | `{ roomId? }` | Ack `{ roomId }` or `{ error: 'room_taken' }`. |
+| `createRoom` | c→s | `{ roomId? }` | Ack `{ roomId, hostToken }` or `{ error: 'room_taken' }`. |
 | `joinRoom` | c→s | `{ roomId }` | Ack `{ ok: true }` or `{ ok: false, error: 'not_found' }`. |
-| `identify` | c→s | `{ role, roomId }` | Ack `{ ok: true }` or `{ ok: false, error: 'not_found' \| 'host_taken' }`. Reclaims a room/host seat after a reconnect or page refresh. |
+| `identify` | c→s | `{ role, roomId, hostToken? }` | Ack `{ ok: true, hostToken }` or `{ ok: false, error: 'not_found' \| 'host_taken' }`. Reclaims a room/host seat after a reconnect or page refresh. |
 | `setAccentEnabled` | c→s | `{ enabled }` | Host-only, silently ignored otherwise. |
 | `updateSettings` | c→s | `{ bpm, timeSignature, subdivision, startTime? }` | Host-only. |
 | `startMetronome` / `stopMetronome` | c→s | — | Host-only. |
@@ -102,3 +115,8 @@ Node version itself; just fall back to static checks + `npm test` and say so.
   it independently testable.
 - Bump `package.json` `version` and the `Last Modified` date in
   `public/index.html`'s `.version-meta` block on user-visible changes.
+- Preset list (`renderPresets()`) doesn't auto-render on its own — it only
+  redraws when explicitly called. Call it after any state change that
+  should be reflected (new host view, save/delete/reorder); it shipped once
+  without a call in `setRole()`, so the list stayed empty until the user
+  incidentally triggered some other UI update.
