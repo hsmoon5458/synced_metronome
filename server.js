@@ -35,10 +35,8 @@ function cancelHostGraceTimer(room) {
 }
 
 // Actually give up on a room's host once the grace period elapses without
-// them reconnecting. The permanent room (1) just goes back to "available",
-// exactly like today's single-room app. An ephemeral room (2+) closes for
-// good: everyone still in it is kicked back to the lobby, and its number is
-// freed for reuse.
+// them reconnecting. The room closes for good: everyone still in it is
+// kicked back to the lobby, and its number is freed for reuse.
 function finalizeHostLoss(roomId) {
   const room = roomManager.getRoom(roomId);
   if (!room) return;
@@ -46,14 +44,15 @@ function finalizeHostLoss(roomId) {
   console.log(`Host grace period elapsed for room ${roomId} — treating host as gone`);
   room.hostSocketId = null;
 
-  if (roomManager.isPermanent(roomId)) {
-    io.to(`room:${roomId}`).emit('hostAvailability', true);
-    if (room.metronomeState.isRunning) {
-      room.metronomeState.isRunning = false;
-      room.metronomeState.startTime = null;
-      io.to(`room:${roomId}`).emit('sync', buildSyncPayload(room, { startTime: null }));
-    }
-    return;
+  // Stop the metronome for anyone still in the room before closing it. The
+  // web client reacts to 'roomClosed' below and resets its whole UI, but
+  // the iOS app doesn't know about rooms/closing at all — this is what
+  // keeps an iOS follower's local ticking in sync with reality instead of
+  // drifting forever with a host that's gone.
+  if (room.metronomeState.isRunning) {
+    room.metronomeState.isRunning = false;
+    room.metronomeState.startTime = null;
+    io.to(`room:${roomId}`).emit('sync', buildSyncPayload(room, { startTime: null }));
   }
 
   io.to(`room:${roomId}`).emit('roomClosed', { reason: 'host_left' });
@@ -167,7 +166,7 @@ io.on('connection', (socket) => {
   if (socket.data.roomId == null) {
     socket.emit('roomList', roomManager.listRooms());
     const defaultRoom = roomManager.getRoom(DEFAULT_ROOM_ID);
-    socket.emit('hostAvailability', defaultRoom.hostSocketId === null);
+    socket.emit('hostAvailability', !defaultRoom || defaultRoom.hostSocketId === null);
   }
 
   // Time synchronization round-trip (NTP-style, 4 timestamps).
@@ -186,7 +185,7 @@ io.on('connection', (socket) => {
   // out to be dead) -- fails with { error: 'room_taken' } if it's already
   // in use.
   socket.on('createRoom', (data, callback) => {
-    const requestedId = Number.isInteger(data && data.roomId) && data.roomId > DEFAULT_ROOM_ID ? data.roomId : null;
+    const requestedId = Number.isInteger(data && data.roomId) && data.roomId >= DEFAULT_ROOM_ID ? data.roomId : null;
     const roomId = requestedId ? roomManager.createRoomWithId(requestedId) : roomManager.createRoom();
     if (roomId == null) {
       if (typeof callback === 'function') callback({ error: 'room_taken' });
@@ -212,21 +211,21 @@ io.on('connection', (socket) => {
     joinSocketToRoom(socket, roomId);
     socket.emit('hostAvailability', room.hostSocketId === null);
     socket.emit('sync', buildSyncPayload(room));
-    if (!roomManager.isPermanent(roomId)) broadcastRoomList();
+    broadcastRoomList();
     if (typeof callback === 'function') callback({ ok: true });
   });
 
   // Handle role identification. Accepts either a bare role string (legacy —
-  // this is what the iOS app sends today, and it's always routed to the
-  // permanent room 1) or { role, roomId } (the web client, mainly used to
-  // reclaim a room/host seat after a reconnect).
+  // this is what the iOS app sends today, and it always means "the default
+  // room", auto-created on demand if it doesn't currently exist) or
+  // { role, roomId } (the web client, mainly used to reclaim a room/host
+  // seat after a reconnect — an explicit roomId must already exist).
   socket.on('identify', (payload) => {
     const role = typeof payload === 'string' ? payload : (payload && payload.role);
-    const roomId = (payload && typeof payload === 'object' && payload.roomId != null)
-      ? payload.roomId
-      : DEFAULT_ROOM_ID;
+    const isLegacy = !(payload && typeof payload === 'object' && payload.roomId != null);
+    const roomId = isLegacy ? DEFAULT_ROOM_ID : payload.roomId;
 
-    const room = roomManager.getRoom(roomId);
+    const room = isLegacy ? roomManager.getOrCreateRoom(roomId) : roomManager.getRoom(roomId);
     if (!room) {
       removeSocketFromRoom(socket);
       socket.join('lobby');
@@ -247,6 +246,7 @@ io.on('connection', (socket) => {
 
     socket.emit('hostAvailability', room.hostSocketId === null);
     socket.emit('sync', buildSyncPayload(room));
+    broadcastRoomList();
   });
 
   // Handle accent beat enable/disable — host-only, mirrors updateSettings.
@@ -305,7 +305,7 @@ io.on('connection', (socket) => {
       console.log(`Metronome started in room ${roomId} at`, new Date(room.metronomeState.startTime).toISOString());
 
       io.to(`room:${roomId}`).emit('sync', buildSyncPayload(room));
-      if (!roomManager.isPermanent(roomId)) broadcastRoomList();
+      broadcastRoomList();
     } else {
       console.log(`Non-host client ${socket.id} attempted to start metronome`);
     }
@@ -321,7 +321,7 @@ io.on('connection', (socket) => {
       console.log(`Metronome stopped by host of room ${roomId}`);
 
       io.to(`room:${roomId}`).emit('sync', buildSyncPayload(room, { startTime: null }));
-      if (!roomManager.isPermanent(roomId)) broadcastRoomList();
+      broadcastRoomList();
     } else {
       console.log(`Non-host client ${socket.id} attempted to stop metronome`);
     }
@@ -347,9 +347,7 @@ io.on('connection', (socket) => {
           room.hostGraceTimer = setTimeout(() => finalizeHostLoss(roomId), HOST_GRACE_MS);
         }
 
-        if (!roomManager.isPermanent(roomId)) {
-          broadcastRoomList();
-        }
+        broadcastRoomList();
       }
     }
 

@@ -4,16 +4,37 @@ const { RoomManager, buildSyncPayload, DEFAULT_ROOM_ID } = require('../rooms');
 const tests = [];
 function test(name, fn) { tests.push({ name, fn }); }
 
-test('room 1 exists immediately and is permanent', () => {
+test('no rooms exist until one is created', () => {
   const rm = new RoomManager();
-  assert.ok(rm.getRoom(DEFAULT_ROOM_ID));
-  assert.strictEqual(rm.isPermanent(DEFAULT_ROOM_ID), true);
+  assert.strictEqual(rm.getRoom(DEFAULT_ROOM_ID), null);
 });
 
-test('createRoom allocates sequential numbers starting at 2', () => {
+test('createRoom allocates sequential numbers starting at 1', () => {
   const rm = new RoomManager();
+  assert.strictEqual(rm.createRoom(), 1);
   assert.strictEqual(rm.createRoom(), 2);
-  assert.strictEqual(rm.createRoom(), 3);
+});
+
+test('getOrCreateRoom creates the default room on first use', () => {
+  const rm = new RoomManager();
+  const room = rm.getOrCreateRoom(DEFAULT_ROOM_ID);
+  assert.ok(room);
+  assert.strictEqual(rm.getRoom(DEFAULT_ROOM_ID), room);
+});
+
+test('getOrCreateRoom returns the existing room on repeat calls', () => {
+  const rm = new RoomManager();
+  const first = rm.getOrCreateRoom(DEFAULT_ROOM_ID);
+  first.metronomeState.bpm = 140;
+  const second = rm.getOrCreateRoom(DEFAULT_ROOM_ID);
+  assert.strictEqual(second, first);
+  assert.strictEqual(second.metronomeState.bpm, 140);
+});
+
+test('getOrCreateRoom keeps the allocator consistent for later createRoom calls', () => {
+  const rm = new RoomManager();
+  rm.getOrCreateRoom(DEFAULT_ROOM_ID);
+  assert.strictEqual(rm.createRoom(), 2);
 });
 
 test('closeRoom removes the room and frees its number for reuse', () => {
@@ -22,13 +43,14 @@ test('closeRoom removes the room and frees its number for reuse', () => {
   rm.createRoom();
   assert.strictEqual(rm.closeRoom(a), true);
   assert.strictEqual(rm.getRoom(a), null);
-  assert.strictEqual(rm.createRoom(), 2);
+  assert.strictEqual(rm.createRoom(), 1);
 });
 
-test('closeRoom never touches the permanent room', () => {
+test('closeRoom can close the default room like any other', () => {
   const rm = new RoomManager();
-  assert.strictEqual(rm.closeRoom(DEFAULT_ROOM_ID), false);
-  assert.ok(rm.getRoom(DEFAULT_ROOM_ID));
+  rm.getOrCreateRoom(DEFAULT_ROOM_ID);
+  assert.strictEqual(rm.closeRoom(DEFAULT_ROOM_ID), true);
+  assert.strictEqual(rm.getRoom(DEFAULT_ROOM_ID), null);
 });
 
 test('closeRoom on an already-closed or unknown room is a safe no-op', () => {
@@ -43,12 +65,12 @@ test('freed numbers are reused smallest-first, not LIFO', () => {
   rm.createRoom();
   rm.closeRoom(b);
   rm.closeRoom(a);
+  assert.strictEqual(rm.createRoom(), 1);
   assert.strictEqual(rm.createRoom(), 2);
-  assert.strictEqual(rm.createRoom(), 3);
-  assert.strictEqual(rm.createRoom(), 5);
+  assert.strictEqual(rm.createRoom(), 4);
 });
 
-test('listRooms excludes the permanent room and reflects participant/running state', () => {
+test('listRooms reflects participant/running state for every room', () => {
   const rm = new RoomManager();
   const a = rm.createRoom();
   const room = rm.getRoom(a);
@@ -58,6 +80,12 @@ test('listRooms excludes the permanent room and reflects participant/running sta
   assert.deepStrictEqual(rm.listRooms(), [{ roomId: a, participantCount: 2, isRunning: true }]);
 });
 
+test('listRooms includes the default room once it exists', () => {
+  const rm = new RoomManager();
+  rm.getOrCreateRoom(DEFAULT_ROOM_ID);
+  assert.deepStrictEqual(rm.listRooms().map(r => r.roomId), [DEFAULT_ROOM_ID]);
+});
+
 test('listRooms is sorted ascending by room id even after reuse reorders the Map', () => {
   const rm = new RoomManager();
   rm.createRoom();
@@ -65,12 +93,12 @@ test('listRooms is sorted ascending by room id even after reuse reorders the Map
   rm.createRoom();
   rm.closeRoom(b);
   rm.createRoom();
-  assert.deepStrictEqual(rm.listRooms().map(r => r.roomId), [2, 3, 4]);
+  assert.deepStrictEqual(rm.listRooms().map(r => r.roomId), [1, 2, 3]);
 });
 
 test('buildSyncPayload reflects room state and applies overrides', () => {
   const rm = new RoomManager();
-  const room = rm.getRoom(DEFAULT_ROOM_ID);
+  const room = rm.getOrCreateRoom(DEFAULT_ROOM_ID);
   room.metronomeState.bpm = 140;
   room.metronomeState.startTime = 12345;
   const payload = buildSyncPayload(room);
@@ -97,11 +125,16 @@ test('createRoomWithId claims a specific unused number', () => {
   assert.ok(rm.getRoom(7));
 });
 
+test('createRoomWithId can claim the default room number', () => {
+  const rm = new RoomManager();
+  assert.strictEqual(rm.createRoomWithId(DEFAULT_ROOM_ID), DEFAULT_ROOM_ID);
+  assert.ok(rm.getRoom(DEFAULT_ROOM_ID));
+});
+
 test('createRoomWithId fails if the number is already in use', () => {
   const rm = new RoomManager();
   rm.createRoomWithId(7);
   assert.strictEqual(rm.createRoomWithId(7), null);
-  assert.strictEqual(rm.createRoomWithId(DEFAULT_ROOM_ID), null, 'must not be able to steal the permanent room');
 });
 
 test('createRoomWithId bumps the high-water mark so future createRoom() never collides', () => {
@@ -115,8 +148,8 @@ test('createRoomWithId removes the claimed number from the freed pool if present
   const a = rm.createRoom();
   rm.createRoom();
   rm.closeRoom(a);
-  assert.strictEqual(rm.createRoomWithId(2), 2);
-  assert.strictEqual(rm.createRoom(), 4);
+  assert.strictEqual(rm.createRoomWithId(1), 1);
+  assert.strictEqual(rm.createRoom(), 3);
 });
 
 let failures = 0;

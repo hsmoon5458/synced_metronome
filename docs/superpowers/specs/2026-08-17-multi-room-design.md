@@ -78,7 +78,7 @@ acting, and broadcasts via `io.to(`room:${roomId}`).emit(...)` instead of
 
 ```
 roomAllocator = {
-  nextRoomNumber: number,   // high-water mark, starts at 2 (see "Room 1" below)
+  nextRoomNumber: number,   // high-water mark, starts at 1
   freedPool: SortedSet<number>  // numbers from fully-closed rooms, reused first
 }
 
@@ -87,33 +87,47 @@ function allocateRoomNumber():
   else: return nextRoomNumber++
 
 function releaseRoomNumber(n):
-  freedPool.add(n)   // never touches room "1"
+  freedPool.add(n)
 ```
 
 Smallest-first reuse keeps numbers compact rather than growing unbounded.
 
-### Room "1" — the permanent default room, reserved for backward compatibility
+> **Revision (2026-08-19):** the original design below reserved room `1`
+> permanently for iOS backward compatibility, hidden from the web room
+> list. That made every web-created room start at `2`, which read as a bug
+> from the web side, so it was dropped: room `1` is now an ordinary room
+> like any other. See "Ephemeral rooms — unified lifecycle" below for
+> current behavior; the iOS-compat implications this trades away are noted
+> there.
 
-Room `1` is created once at server startup and is **never destroyed**, even
-when it becomes hostless. It behaves exactly like today's single-room app:
-on host-disconnect-grace-expiry, it just goes back to "available" — it does
-not close or kick anyone. `roomAllocator` never allocates or frees `1`; the
-web client's "Create Room" flow only ever produces numbers `2+`.
+### Room "1" — the default room for legacy `identify` (superseded, see revision above)
 
 Any `identify` call that doesn't specify a room — i.e. the bare string the
 iOS app already sends today (`socketService.identify(role: role.rawValue)`)
-— is routed to room `1`. This means the iOS app requires **zero code
-changes** and behaves identically to today, indefinitely, without needing to
-know multi-room exists.
+— is routed to room `1`, created on demand via `getOrCreateRoom(1)` if it
+doesn't currently exist. This keeps the iOS app working with **zero code
+changes**, but room `1` is otherwise a normal room now: it's visible in the
+web room list, and it closes (kicking any followers, freeing the number)
+just like any other room once its host is confirmed gone. Practical
+consequence: if an iOS host's connection is lost for good, iOS followers
+(who don't listen for `roomClosed`) get a final `sync` that stops the
+metronome, but the server-side room they were in is gone — reclaiming host
+or resuming as a follower requires the app to reconnect and re-`identify`
+(happens automatically on socket reconnect, but not while the existing
+socket connection is still alive). Web followers handle `roomClosed`
+directly and get bounced to `/` with a message, same as any other room.
 
-### Ephemeral rooms (2+) — web-only lifecycle
+### Ephemeral rooms — unified lifecycle
 
-- Created on demand via `createRoom`.
+- Created on demand via `createRoom` (web) or the first `identify`/`joinRoom`
+  that references a given number (iOS's legacy path, or a `/r/N` deep link).
 - Closed the moment their host is confirmed gone (15s disconnect grace
   period expires with no reclaim) — **immediately**, even if followers are
   still connected. Remaining followers receive a `roomClosed` event and are
-  redirected to `/` with a "Host left, room closed" message.
-- On close: room removed from `rooms`, number returned to `freedPool`.
+  redirected to `/` with a "Host left, room closed" message (web); see the
+  iOS note above for how iOS followers experience the same event.
+- On close: room removed from `rooms`, number returned to `freedPool` — so
+  the very next room created, by anyone, can become `1` again.
 
 ## URL scheme
 
@@ -169,10 +183,9 @@ participant count, a playing/stopped status dot — no polling. A socket
 leaves `lobby` when it joins a real room (`createRoom`/`joinRoom`) and
 rejoins `lobby` if it's later kicked out via `roomClosed`.
 
-Room `1` is excluded from the list (it's the iOS legacy room, not part of
-the web multi-room concept) unless it happens to have a host and someone
-wants it listed too — **open question, default to excluding it**; see
-Open Questions.
+Room `1` is included in the list like any other room (see the 2026-08-19
+revision above) once it's been created — it just happens to also be the
+room legacy `identify` calls land in.
 
 Tapping a room row = `joinRoom({ roomId })`, same as the `/r/N` auto-join
 path. If the room closed between listing and tap, same inline "Room
@@ -184,7 +197,7 @@ Empty state: "No active rooms — create one," Create button prominent.
 
 | Event | Direction | Payload | Notes |
 |---|---|---|---|
-| `createRoom` | client→server | (none) | Ack: `{ roomId }`. Allocates from pool/counter (2+), creates the room, joins caller as host, moves them out of `lobby`. |
+| `createRoom` | client→server | (none) | Ack: `{ roomId }`. Allocates from pool/counter (starting at 1), creates the room, joins caller as host, moves them out of `lobby`. |
 | `joinRoom` | client→server | `{ roomId }` | Ack: `{ ok: true }` or `{ ok: false, error: 'not_found' }`. Joins as follower, moves out of `lobby`. |
 | `identify` | client→server | `string` (legacy, room 1) or `{ role, roomId }` | Single handler branches on payload shape. Existing host-exclusivity/reclaim logic applies per-room. |
 | `roomList` | server→client | `[{ roomId, participantCount, isRunning }]` | Broadcast to `lobby` on any change. |

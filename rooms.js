@@ -23,17 +23,29 @@ function createRoomState() {
 class RoomManager {
   constructor() {
     this.rooms = new Map();
-    this.nextRoomNumber = DEFAULT_ROOM_ID + 1;
+    this.nextRoomNumber = DEFAULT_ROOM_ID;
     this.freedPool = [];
-    this.rooms.set(DEFAULT_ROOM_ID, createRoomState());
-  }
-
-  isPermanent(roomId) {
-    return roomId === DEFAULT_ROOM_ID;
   }
 
   getRoom(roomId) {
     return this.rooms.get(roomId) || null;
+  }
+
+  // Get-or-create for a specific room number. Used by legacy bare
+  // identify(role) clients (the iOS app), which don't know about room
+  // numbers and always mean "the default room" -- so it must never fail
+  // with "not found" the way getRoom() can. Bookkeeping mirrors
+  // createRoomWithId(): pulls the number out of the freed pool if it was
+  // sitting there, and bumps the high-water mark past it.
+  getOrCreateRoom(roomId) {
+    const existing = this.rooms.get(roomId);
+    if (existing) return existing;
+    const idx = this.freedPool.indexOf(roomId);
+    if (idx !== -1) this.freedPool.splice(idx, 1);
+    const room = createRoomState();
+    this.rooms.set(roomId, room);
+    if (roomId >= this.nextRoomNumber) this.nextRoomNumber = roomId + 1;
+    return room;
   }
 
   createRoom() {
@@ -58,7 +70,6 @@ class RoomManager {
   }
 
   closeRoom(roomId) {
-    if (this.isPermanent(roomId)) return false;
     if (!this.rooms.has(roomId)) return false;
     this.rooms.delete(roomId);
     this._releaseNumber(roomId);
@@ -71,13 +82,10 @@ class RoomManager {
     this.freedPool.splice(i, 0, roomId);
   }
 
-  // Snapshot for the lobby room list. Room 1 is deliberately excluded --
-  // it's the permanent legacy/iOS room, not part of the web multi-room
-  // concept.
+  // Snapshot for the lobby room list.
   listRooms() {
     const result = [];
     for (const [roomId, room] of this.rooms) {
-      if (this.isPermanent(roomId)) continue;
       result.push({
         roomId,
         participantCount: room.clients.size,
