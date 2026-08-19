@@ -2,8 +2,6 @@
 // handlers in ./handlers.js. Bound to a specific `io`/`roomManager` pair via
 // createRoomLifecycle() so callers don't have to thread them through every
 // call.
-const { buildSyncPayload } = require('../rooms');
-
 // How long to wait after a room's host disconnects before assuming they
 // really left (vs. a brief network blip / screen lock) and stopping/closing
 // the room for everyone else.
@@ -26,17 +24,6 @@ function createRoomLifecycle(io, roomManager) {
     room.hostGraceTimer = null;
     console.log(`Host grace period elapsed for room ${roomId} — treating host as gone`);
     room.hostSocketId = null;
-
-    // Stop the metronome for anyone still in the room before closing it. The
-    // web client reacts to 'roomClosed' below and resets its whole UI, but
-    // the iOS app doesn't know about rooms/closing at all — this is what
-    // keeps an iOS follower's local ticking in sync with reality instead of
-    // drifting forever with a host that's gone.
-    if (room.metronomeState.isRunning) {
-      room.metronomeState.isRunning = false;
-      room.metronomeState.startTime = null;
-      io.to(`room:${roomId}`).emit('sync', buildSyncPayload(room, { startTime: null }));
-    }
 
     io.to(`room:${roomId}`).emit('roomClosed', { reason: 'host_left' });
     const socketIdsInRoom = io.sockets.adapter.rooms.get(`room:${roomId}`);

@@ -27,28 +27,17 @@ app can't run (see Node version note below).
 
 **Rooms.** `RoomManager` (`rooms.js`) owns a `Map<roomId, roomState>` plus a
 number allocator (`nextRoomNumber` high-water mark + `freedPool` for reuse,
-smallest-first). `roomState` = `{ metronomeState, hostSocketId, clients:
-Set<socketId>, hostGraceTimer }`. `DEFAULT_ROOM_ID = 1` — not special-cased
-in storage; it's just the room legacy `identify(role)` calls land in (see
-below). Every room, including 1, closes for good once its host is confirmed
-gone (15s grace period, `HOST_GRACE_MS` in `socket/roomLifecycle.js`) and its
-number goes back into the pool.
+smallest-first, starting at `DEFAULT_ROOM_ID = 1`). `roomState` =
+`{ metronomeState, hostSocketId, clients: Set<socketId>, hostGraceTimer }`.
+Every room closes for good once its host is confirmed gone (15s grace
+period, `HOST_GRACE_MS` in `socket/roomLifecycle.js`) and its number goes
+back into the pool.
 
 **Socket-to-room binding.** Each socket lives in one Socket.IO room
 (`room:${roomId}`) plus, when unassigned, a shared `lobby` room used to push
 the live room list. `socket.data.roomId` tracks current membership.
 `socket/roomLifecycle.js` exports the join/leave/host-claim helpers;
 `socket/handlers.js` wires socket events to them.
-
-**Legacy client compatibility.** `identify` also accepts a bare role string
-(no room concept at all) instead of `{ role, roomId }` — kept for an older
-client that isn't part of this repo. The server routes that legacy path to
-`DEFAULT_ROOM_ID`, auto-creating it via `roomManager.getOrCreateRoom()` if
-needed. Don't add anything to the legacy `identify` path that assumes a room
-number, and don't remove `getOrCreateRoom`. That legacy client doesn't
-listen for `roomClosed`, so `finalizeHostLoss()` sends a final `sync`
-(isRunning: false) before tearing a room down, so an orphaned legacy
-follower's UI at least stops ticking instead of drifting forever.
 
 **Web client.** Single inline `<script>` in `public/index.html`, no bundler.
 Landing page (`/`) shows a live room list + create/join. `/r/:roomId` (SPA
@@ -69,7 +58,7 @@ server-clock correction to its own local scheduling; followers do.
 |---|---|---|---|
 | `createRoom` | c→s | `{ roomId? }` | Ack `{ roomId }` or `{ error: 'room_taken' }`. |
 | `joinRoom` | c→s | `{ roomId }` | Ack `{ ok: true }` or `{ ok: false, error: 'not_found' }`. |
-| `identify` | c→s | `string` (legacy) or `{ role, roomId }` | Legacy string → default room, auto-created. |
+| `identify` | c→s | `{ role, roomId }` | Reclaims a room/host seat after a reconnect. |
 | `setAccentEnabled` | c→s | `{ enabled }` | Host-only, silently ignored otherwise. |
 | `updateSettings` | c→s | `{ bpm, timeSignature, subdivision, startTime? }` | Host-only. |
 | `startMetronome` / `stopMetronome` | c→s | — | Host-only. |
@@ -78,7 +67,7 @@ server-clock correction to its own local scheduling; followers do.
 | `roomList` | s→c | `[{ roomId, participantCount, isRunning }]` | Broadcast to `lobby` on any room change. |
 | `hostAvailability` | s→c | `boolean` | — |
 | `clientCount` | s→c | `number` | — |
-| `roomClosed` | s→c | `{ reason: 'host_left' \| 'not_found' }` | Web resets UI to landing page; the legacy client ignores it. |
+| `roomClosed` | s→c | `{ reason: 'host_left' \| 'not_found' }` | Client resets UI to landing page. |
 
 ## Running / testing
 

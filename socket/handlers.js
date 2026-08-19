@@ -28,8 +28,6 @@ function registerSocketHandlers(io, roomManager) {
 
     if (socket.data.roomId == null) {
       socket.emit('roomList', roomManager.listRooms());
-      const defaultRoom = roomManager.getRoom(DEFAULT_ROOM_ID);
-      socket.emit('hostAvailability', !defaultRoom || defaultRoom.hostSocketId === null);
     }
 
     // Time synchronization round-trip (NTP-style, 4 timestamps).
@@ -78,17 +76,13 @@ function registerSocketHandlers(io, roomManager) {
       if (typeof callback === 'function') callback({ ok: true });
     });
 
-    // Handle role identification. Accepts either a bare role string (legacy —
-    // this is what the iOS app sends today, and it always means "the default
-    // room", auto-created on demand if it doesn't currently exist) or
-    // { role, roomId } (the web client, mainly used to reclaim a room/host
-    // seat after a reconnect — an explicit roomId must already exist).
+    // Handle role identification: { role, roomId }. Mainly used to reclaim
+    // a room/host seat after a reconnect — the room must already exist.
     socket.on('identify', (payload) => {
-      const role = typeof payload === 'string' ? payload : (payload && payload.role);
-      const isLegacy = !(payload && typeof payload === 'object' && payload.roomId != null);
-      const roomId = isLegacy ? DEFAULT_ROOM_ID : payload.roomId;
+      const role = payload && payload.role;
+      const roomId = payload && payload.roomId;
 
-      const room = isLegacy ? roomManager.getOrCreateRoom(roomId) : roomManager.getRoom(roomId);
+      const room = roomId != null ? roomManager.getRoom(roomId) : null;
       if (!room) {
         removeSocketFromRoom(socket);
         socket.join('lobby');

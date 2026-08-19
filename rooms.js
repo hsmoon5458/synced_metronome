@@ -31,23 +31,6 @@ class RoomManager {
     return this.rooms.get(roomId) || null;
   }
 
-  // Get-or-create for a specific room number. Used by legacy bare
-  // identify(role) clients (the iOS app), which don't know about room
-  // numbers and always mean "the default room" -- so it must never fail
-  // with "not found" the way getRoom() can. Bookkeeping mirrors
-  // createRoomWithId(): pulls the number out of the freed pool if it was
-  // sitting there, and bumps the high-water mark past it.
-  getOrCreateRoom(roomId) {
-    const existing = this.rooms.get(roomId);
-    if (existing) return existing;
-    const idx = this.freedPool.indexOf(roomId);
-    if (idx !== -1) this.freedPool.splice(idx, 1);
-    const room = createRoomState();
-    this.rooms.set(roomId, room);
-    if (roomId >= this.nextRoomNumber) this.nextRoomNumber = roomId + 1;
-    return room;
-  }
-
   createRoom() {
     const roomId = this.freedPool.length > 0 ? this.freedPool.shift() : this.nextRoomNumber++;
     this.rooms.set(roomId, createRoomState());
