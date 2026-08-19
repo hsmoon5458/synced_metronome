@@ -804,7 +804,7 @@ select:focus {
     }
 }
 
-/* Home-screen QR code for joining from another device */
+/* QR code for joining from another device, at the bottom of host controls */
 #qrJoin {
     margin-top: 1.5rem;
     display: flex;
@@ -929,7 +929,8 @@ select:focus {
     margin-bottom: 1rem;
 }
 
-/* ── Host room info (number + QR) ── */
+/* ── Host room info (room number heading; QR code moved to the bottom of
+   host controls — see #qrJoin) ── */
 #roomInfo {
     margin-bottom: 1.5rem;
 }
