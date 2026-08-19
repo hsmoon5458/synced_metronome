@@ -1,8 +1,10 @@
 # Synced Metronome
 
 Real-time multi-room metronome. A web client (plain HTML/JS, no build step)
-and a native iOS app both connect to one Node/Express/Socket.IO server,
-which is the single source of truth for tempo/timing per room.
+connects to a Node/Express/Socket.IO server, which is the single source of
+truth for tempo/timing per room.
+
+Hosted at: https://synced-metronome.onrender.com/
 
 ## File map
 
@@ -15,11 +17,6 @@ public/index.html       Entire web client: markup + inline <script>, one file.
 public/style.css        Web client styles.
 public/icons/*.svg      Subdivision note icons (quarter/eighth/triplet/sixteenth).
 test/rooms.test.js      Plain-assert tests for rooms.js (no framework).
-ios/SyncedMetronome/    SwiftUI app. Services/SocketService.swift is the
-                         Socket.IO client; MetronomeViewModel.swift drives it.
-docs/superpowers/       Design specs + implementation plans from past features
-                         (dated files — read for historical "why", not current
-                         truth; code is authoritative if they conflict).
 ```
 
 `rooms.js` has zero dependencies (no express/socket.io imports) specifically
@@ -43,15 +40,15 @@ the live room list. `socket.data.roomId` tracks current membership.
 `socket/roomLifecycle.js` exports the join/leave/host-claim helpers;
 `socket/handlers.js` wires socket events to them.
 
-**iOS compatibility.** The iOS app sends a bare string via
-`identify(role: role.rawValue)` — no room concept at all. The server routes
-that legacy path to `DEFAULT_ROOM_ID`, auto-creating it via
-`roomManager.getOrCreateRoom()` if needed. This is the **one constraint that
-shapes a lot of the server code**: don't add anything to the legacy
-`identify` path that assumes a room number, and don't remove
-`getOrCreateRoom`. iOS never listens for `roomClosed`, so
-`finalizeHostLoss()` sends a final `sync` (isRunning: false) before tearing
-a room down, so an orphaned iOS follower's UI at least stops ticking.
+**Legacy client compatibility.** `identify` also accepts a bare role string
+(no room concept at all) instead of `{ role, roomId }` — kept for an older
+client that isn't part of this repo. The server routes that legacy path to
+`DEFAULT_ROOM_ID`, auto-creating it via `roomManager.getOrCreateRoom()` if
+needed. Don't add anything to the legacy `identify` path that assumes a room
+number, and don't remove `getOrCreateRoom`. That legacy client doesn't
+listen for `roomClosed`, so `finalizeHostLoss()` sends a final `sync`
+(isRunning: false) before tearing a room down, so an orphaned legacy
+follower's UI at least stops ticking instead of drifting forever.
 
 **Web client.** Single inline `<script>` in `public/index.html`, no bundler.
 Landing page (`/`) shows a live room list + create/join. `/r/:roomId` (SPA
@@ -64,8 +61,7 @@ the wrong base and 404s. (This exact bug shipped once; don't reintroduce it.)
 **Time sync.** NTP-style 4-timestamp round-trip over the `timeSync` socket
 event (client t0 → server stamps t1/t2 → client stamps t3, computes
 offset+delay). The room's host is the authoritative clock and never applies
-server-clock correction to its own local scheduling; followers do. See
-`docs/superpowers/specs/` for the fuller rationale if touching this.
+server-clock correction to its own local scheduling; followers do.
 
 ## Socket protocol (event: direction: payload)
 
@@ -82,7 +78,7 @@ server-clock correction to its own local scheduling; followers do. See
 | `roomList` | s→c | `[{ roomId, participantCount, isRunning }]` | Broadcast to `lobby` on any room change. |
 | `hostAvailability` | s→c | `boolean` | — |
 | `clientCount` | s→c | `number` | — |
-| `roomClosed` | s→c | `{ reason: 'host_left' \| 'not_found' }` | Web resets UI to landing page; iOS ignores it. |
+| `roomClosed` | s→c | `{ reason: 'host_left' \| 'not_found' }` | Web resets UI to landing page; the legacy client ignores it. |
 
 ## Running / testing
 
