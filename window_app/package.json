@@ -1,0 +1,49 @@
+{
+  "name": "metronome-desktop",
+  "version": "1.17.1",
+  "description": "An independent offline desktop metronome for Windows",
+  "main": "desktop/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node test/desktop.test.js",
+    "test:desktop": "electron test/desktop-smoke.js",
+    "test:windows-build": "node test/windows-build.test.js",
+    "icon": "node scripts/create-icon.js",
+    "build:win": "npm run icon && electron-builder --win portable zip --x64 && node scripts/portable-zip.js x64",
+    "build:win:arm64": "npm run icon && electron-builder --win portable zip --arm64 && node scripts/portable-zip.js arm64"
+  },
+  "keywords": [],
+  "author": "Hye Sung Moon",
+  "license": "ISC",
+  "build": {
+    "appId": "com.hyesungmoon.metronome",
+    "productName": "Synced Metronome",
+    "afterPack": "scripts/embed-icon.js",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "desktop/main.js",
+      "public/**/*",
+      "assets/icon.ico",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "portable",
+        "zip"
+      ],
+      "signAndEditExecutable": false,
+      "icon": "assets/icon.ico",
+      "artifactName": "Synced-Metronome-${version}-Windows-${arch}.${ext}"
+    }
+  },
+  "devDependencies": {
+    "7zip-bin": "5.2.0",
+    "electron": "44.7.0",
+    "electron-builder": "26.0.12",
+    "pe-library": "2.0.1",
+    "png-to-ico": "3.0.2",
+    "resedit": "3.1.0"
+  }
+}

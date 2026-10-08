@@ -1,0 +1,1335 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Synced Metronome</title>
+  <link rel="stylesheet" href="/style.css">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'">
+<style>#qrJoin, #roomInfo, #statusInfo { display: none !important; }</style>
+</head>
+
+<body>
+  <h1>Synced Metronome</h1>
+  <div class="version-display" id="versionDisplay">v...</div>
+  <div class="version-meta">
+    <p>Last Modified: 2026-10-08</p>
+    <p>Developer: Hye Sung Moon</p>
+  </div>
+  <div class="connection-status" id="connectionStatus">
+    <span class="connection-dot" id="connectionDot"></span>
+    <span id="connectionLabel">Connecting...</span>
+  </div>
+  <div class="beat-indicators" id="beatDots"></div>
+
+  <div class="card">
+    <div id="roleChooser">
+      <div id="landingChooser">
+        <div class="button-group">
+          <button id="btnChooseHost" onclick="handleCreateRoom()">Host<span class="role-desc">Start a new room</span></button>
+        </div>
+        <div id="roomListSection">
+          <h3>Open Rooms</h3>
+          <ul id="roomList"></ul>
+          <p id="roomListEmpty" style="display:none;">No active rooms — create one!</p>
+        </div>
+      </div>
+      <div id="roomNotFound" style="display:none;">
+        <p>Room <span id="notFoundRoomId"></span> wasn't found.</p>
+        <div class="button-group">
+          <button onclick="handleHostFallback()">Host this room instead</button>
+          <button onclick="goToLanding()">Go home</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="metronomeControls" style="display:none;">
+      <p id="bpmDisplay">120</p>
+      <div id="clientVisuals" class="visual-indicators">
+        <div class="visual-indicator">
+          <div class="time-sig-visual" id="timeSignatureVisual">
+            <div class="numerator">4</div>
+            <div class="divider"></div>
+            <div class="denominator">4</div>
+          </div>
+        </div>
+        <div class="visual-indicator">
+          <div class="subdiv-visual" id="subdivisionVisual">
+            <!-- Will be filled dynamically -->
+          </div>
+        </div>
+      </div>
+      <div id="statusInfo">
+        <p id="roomIdStatusDisplay"></p>
+        <p id="statusDisplay"></p>
+        <p id="latencyDisplay"></p>
+      </div>
+    </div>
+
+    <div id="hostControls" style="display:none;">
+      <div id="roomInfo">
+        <h2 id="roomIdDisplay"></h2>
+      </div>
+      <div class="settings-grid">
+        <div class="form-group">
+          <div class="bpm-controls" id="bpmControls" style="display: flex;">
+            <div class="bpm-buttons">
+              <button onclick="changeBpm(-1)">-</button>
+              <input id="bpmValue" value="120">
+              <button onclick="changeBpm(1)">+</button>
+            </div>
+            <input type="range" id="bpmSlider" min="30" max="300" value="120">
+            <div class="button-group" style="margin-top: 1rem;">
+              <button id="startButton" onclick="startMetronome()">Start</button>
+              <button id="stopButton" class="stop" onclick="stopMetronome()" disabled>Stop</button>
+            </div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="timeSigInput">Time Signature:</label>
+          <select id="timeSigInput">
+            <option value="4/4">4/4</option>
+            <option value="3/4">3/4</option>
+            <option value="6/8">6/8</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <label for="subdivisionInput" style="margin:0;">Subdivision:</label>
+            <div id="hostSubdivisionVisual" style="height: 38px;"></div>
+          </div>
+          <select id="subdivisionInput" style="margin-top: 0.5rem;">
+            <option value="1">Quarter Note (1/4)</option>
+            <option value="2" selected>Eighth Note (1/8)</option>
+            <option value="3">Eighth Note Triplets</option>
+            <option value="4">Sixteenth Note (1/16)</option>
+          </select>
+        </div>
+      </div>
+      <div id="presetBank">
+        <h3>Preset Bank</h3>
+        <button onclick="handleSavePreset()">Save Current Preset</button>
+        <ul id="presetList"></ul>
+      </div>
+      <div id="shortcutsPanel">
+        <h4>Keyboard Shortcuts</h4>
+        <ul>
+          <li><kbd>Space</kbd> Start / Stop</li>
+          <li><kbd>M</kbd> / <kbd>N</kbd> BPM +1 / -1</li>
+          <li><kbd>S</kbd> Save preset</li>
+          <li><kbd>1</kbd>-<kbd>9</kbd> Load preset</li>
+          <li><kbd>B</kbd> Toggle accent beat</li>
+          <li>Drag a preset to reorder</li>
+        </ul>
+      </div>
+      <div id="qrJoin">
+        <div id="qrCode"></div>
+        <p class="qr-label">Scan to join on another device</p>
+        <p class="qr-url" id="qrUrl"></p>
+      </div>
+    </div>
+  </div>
+</body>
+
+<script src="/local-socket.js"></script>
+
+<script>
+  const socket = io();
+  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+  // Metronome state
+  let bpm = 120;
+  let accentEnabled = true;
+  let isRunning = false;
+  let startTime = null;
+  let nextTick = 0;
+  let role = null;
+  let currentRoomId = null;
+  let pendingHostRoomId = null; // set by showRoomNotFound(); used by handleHostFallback()
+  let tickTimer = null;
+  let subdivision = 2;
+  let timeSignature = '4/4';
+  let beatCount = 0;
+  let syncTimeout = null;
+  let timeSynced = false;
+  let isSyncing = false;
+  let lastDriftCheck = 0;
+  let reSyncInterval = null;
+
+  // DOM Elements
+  const metronomeControls = document.getElementById('metronomeControls');
+  const roleChooser = document.getElementById('roleChooser');
+  const bpmControls = document.getElementById('bpmControls');
+  const bpmSlider = document.getElementById('bpmSlider');
+  const bpmInput = document.getElementById('bpmValue');
+  const startButton = document.getElementById('startButton');
+  const stopButton = document.getElementById('stopButton');
+  const clientVisuals = document.getElementById('clientVisuals');
+  const noSleep = new NoSleep();
+
+  // Fetch and display version from server
+  document.getElementById('versionDisplay').textContent = 'v1.17.1';
+
+  // Renders a QR code + link pointing at a specific room's join URL. Called
+  // once a host actually has a room number (there's nothing to share before
+  // that), unlike the old version which rendered unconditionally at load.
+  function renderJoinQR(roomId) {
+    const joinUrl = `${window.location.origin}/r/${roomId}`;
+    const urlEl = document.getElementById('qrUrl');
+    if (urlEl) urlEl.textContent = joinUrl.replace(/^https?:\/\//, '');
+    const target = document.getElementById('qrCode');
+    if (target && typeof QRCode !== 'undefined') {
+      target.innerHTML = '';
+      new QRCode(target, {
+        text: joinUrl,
+        width: 168,
+        height: 168,
+        colorDark: '#0e0e10',
+        colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.M
+      });
+    } else if (target) {
+      // QR library failed to load (offline / CDN blocked) — hide the block.
+      const wrap = document.getElementById('qrJoin');
+      if (wrap) wrap.style.display = 'none';
+      console.warn('QR library unavailable; join QR hidden.');
+    }
+  }
+
+  // If we landed on /r/N (a shared link or QR scan), join it as a follower
+  // immediately — no chooser click needed. Bare '/' leaves the landing
+  // chooser showing. A browser refresh is treated differently: whether you
+  // were host or follower, a refresh sends you back to the landing page
+  // instead of silently rejoining — simpler and more predictable than
+  // trying to reclaim a room (or a host seat) across a reload. The
+  // Navigation Timing API is what distinguishes "refreshed this exact page"
+  // from "navigated here fresh" (link/QR/typed URL all report 'navigate').
+  (function autoJoinFromUrl() {
+    const urlRoomId = parseRoomIdFromPath();
+    if (!urlRoomId) return;
+    const navEntries = performance.getEntriesByType('navigation');
+    const isReload = navEntries.length > 0 && navEntries[0].type === 'reload';
+    if (isReload) {
+      window.history.replaceState({}, '', '/');
+      return;
+    }
+    attemptJoinRoom(urlRoomId);
+  })();
+
+  // Slider fill logic
+  function updateSliderFill(slider) {
+    const min = +slider.min || 0;
+    const max = +slider.max || 100;
+    const val = +slider.value;
+    const percent = ((val - min) / (max - min)) * 100;
+    slider.style.setProperty('--val', percent + '%');
+  }
+  // Init and update slider fill on input/change
+
+  if (bpmSlider) {
+    updateSliderFill(bpmSlider);
+    bpmSlider.addEventListener('input', () => updateSliderFill(bpmSlider));
+    bpmSlider.addEventListener('change', () => updateSliderFill(bpmSlider));
+  }
+
+  // Update BPM value display when slider changes
+  bpmSlider.addEventListener('input', () => {
+    bpm = parseInt(bpmSlider.value);
+    bpmInput.value = bpm;
+    document.getElementById("bpmDisplay").textContent = `${bpm}`;
+    updateSliderFill(bpmSlider);
+    if (role === 'host') {
+      debounceUpdateSettings();
+      renderPresets();
+    }
+  });
+
+  // Handle direct BPM input changes
+  bpmInput.addEventListener('change', () => {
+    let newBpm = parseInt(bpmInput.value);
+    // Clamp BPM to valid range
+    newBpm = Math.max(30, Math.min(300, newBpm || 120));
+    bpm = newBpm;
+    bpmInput.value = bpm;
+    bpmSlider.value = bpm;
+    updateSliderFill(bpmSlider);
+    document.getElementById("bpmDisplay").textContent = `${bpm}`;
+    if (role === 'host') {
+      updateSettings();
+    }
+  });
+
+  let wakeLock = null;
+  let silentSource = null;
+
+  async function requestWakeLock() {
+    // Release existing lock before re-acquiring
+    if (wakeLock) {
+      try { await wakeLock.release(); } catch (e) { /* ignore */ }
+      wakeLock = null;
+    }
+    try {
+      if ('wakeLock' in navigator) {
+        wakeLock = await navigator.wakeLock.request('screen');
+        console.log('Wake Lock active');
+      }
+    } catch (err) {
+      console.error(`Wake Lock failed: ${err.name}, ${err.message}`);
+    }
+  }
+
+  async function releaseWakeLock() {
+    if (wakeLock) {
+      try { await wakeLock.release(); } catch (e) { /* ignore */ }
+      wakeLock = null;
+      console.log('Wake Lock released');
+    }
+  }
+
+  function startSilentAudio() {
+    if (silentSource) return;
+    try {
+      const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate, audioCtx.sampleRate);
+      silentSource = audioCtx.createBufferSource();
+      silentSource.buffer = buffer;
+      silentSource.loop = true;
+      silentSource.connect(audioCtx.destination);
+      silentSource.start();
+    } catch (e) {
+      console.error("Error starting silent audio:", e);
+    }
+  }
+
+  function stopSilentAudio() {
+    if (silentSource) {
+      try { silentSource.stop(); } catch (e) { /* ignore */ }
+      silentSource = null;
+    }
+  }
+
+  // Acquire all screen-wake mechanisms (called when playback starts)
+  function acquireScreenWake() {
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume().catch(e => console.error("AudioContext resume error:", e));
+    }
+    startSilentAudio();
+    requestWakeLock();
+    if (!noSleep.isEnabled) {
+      noSleep.enable().catch(e => console.error("Failed to enable NoSleep:", e));
+    }
+  }
+
+  // Release all screen-wake mechanisms (called when playback stops)
+  function releaseScreenWake() {
+    stopSilentAudio();
+    releaseWakeLock();
+    if (noSleep.isEnabled) {
+      noSleep.disable();
+    }
+  }
+
+  // Resume AudioContext on first user interaction
+  document.body.addEventListener('click', () => {
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+  }, { once: true });
+
+  // Update time signature visual display
+  function updateTimeSignatureVisual(ts) {
+    const [numerator, denominator] = ts.split('/').map(Number);
+    const visual = document.getElementById('timeSignatureVisual');
+    const numeratorEl = visual.querySelector('.numerator');
+    const denominatorEl = visual.querySelector('.denominator');
+    numeratorEl.textContent = numerator;
+    denominatorEl.textContent = denominator;
+  }
+
+  // Update subdivision visual display
+  function updateSubdivisionVisual(subdiv) {
+    subdiv = parseInt(subdiv);
+
+    // Update both client and host visuals
+    const targets = [
+      document.getElementById('subdivisionVisual'),
+      document.getElementById('hostSubdivisionVisual')
+    ];
+
+    targets.forEach(container => {
+      if (!container) return;
+      container.innerHTML = '';
+
+      const img = document.createElement('img');
+      img.className = 'note-icon';
+
+      switch (subdiv) {
+        case 1:
+          img.src = '/icons/quarter.svg';
+          img.alt = 'Quarter Note';
+          break;
+        case 2:
+          img.src = '/icons/eighth.svg';
+          img.alt = 'Eighth Notes';
+          break;
+        case 3:
+          img.src = '/icons/triplet.svg';
+          img.alt = 'Triplets';
+          break;
+        case 4:
+          img.src = '/icons/sixteenth.svg';
+          img.alt = 'Sixteenth Notes';
+          break;
+        default:
+          console.warn('Unknown subdivision:', subdiv);
+          return;
+      }
+      container.appendChild(img);
+    });
+  }
+
+  // Create visual beat indicators based on time signature
+  function updateBeatDots() {
+    const container = document.getElementById('beatDots');
+    container.innerHTML = '';
+    const [numerator, denominator] = timeSignature.split('/').map(Number);
+    for (let i = 0; i < numerator; i++) {
+      const dot = document.createElement('div');
+      dot.classList.add('dot');
+      if (i === 0) {
+        dot.classList.add('accent-toggle');
+        dot.classList.toggle('accent', accentEnabled);
+        if (role === 'host') {
+          dot.setAttribute('role', 'button');
+          dot.setAttribute('tabindex', '0');
+          dot.setAttribute('aria-pressed', String(accentEnabled));
+          dot.title = accentEnabled ? 'Accent beat on — click to turn off (B)' : 'Accent beat off — click to turn on (B)';
+          dot.addEventListener('click', toggleAccent);
+          dot.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              toggleAccent();
+            }
+          });
+        } else {
+          dot.title = accentEnabled ? 'Accent beat on (set by host)' : 'Accent beat off (set by host)';
+        }
+      }
+      container.appendChild(dot);
+    }
+  }
+
+  // Toggle whether beat 1 gets the accent (louder/higher-pitched) treatment.
+  // Host-only: the host's choice is broadcast to all followers via the
+  // server's shared state, same as bpm/timeSignature. Not persisted across
+  // server restarts — every fresh session starts with the accent back on.
+  function toggleAccent() {
+    if (role !== 'host') return;
+    accentEnabled = !accentEnabled;
+    updateBeatDots();
+    socket.emit('setAccentEnabled', { enabled: accentEnabled });
+  }
+
+  // Highlight the current beat dot
+  function highlightDot(index) {
+    const dots = document.querySelectorAll('.dot');
+    dots.forEach((dot, i) => {
+      dot.classList.toggle('active', i === index);
+    });
+  }
+
+  // Flash the screen
+  function flashScreen(isAccent) {
+    const flashClass = isAccent ? 'flash-accent' : 'flash';
+    document.body.classList.add(flashClass);
+    setTimeout(() => {
+      document.body.classList.remove(flashClass);
+    }, 50);
+  }
+
+  // Change BPM value
+  function changeBpm(delta) {
+    bpm = Math.max(30, Math.min(300, bpm + delta));
+    bpmSlider.value = bpm;
+    bpmInput.value = bpm;
+    updateSliderFill(bpmSlider);
+    document.getElementById("bpmDisplay").textContent = `${bpm}`;
+    if (role === 'host') {
+      updateSettings();
+    }
+  }
+
+  // Debounce function for slider changes
+  let updateTimeout = null;
+  function debounceUpdateSettings() {
+    clearTimeout(updateTimeout);
+    updateTimeout = setTimeout(updateSettings, 300);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Disciplined clock
+  //
+  // We model the mapping from the local clock to the server clock as a line:
+  //   serverTime ≈ localTime + intercept + slope * (localTime - refLocal)
+  // `intercept` corrects the constant offset; `slope` corrects the *rate*
+  // difference (clock skew) so we stop chasing drift between syncs. Samples
+  // come from a 4-timestamp round-trip and are weighted by measured network
+  // delay — high-delay (asymmetric/jittery) samples are discarded.
+  // ---------------------------------------------------------------------------
+  const MAX_CLOCK_SAMPLES = 60;
+  let clockSamples = [];       // { local, server, delay }
+  let clockRefLocal = null;    // fixed anchor (first sample's local time)
+  let clockIntercept = 0;      // (server - local) at refLocal, in ms
+  let clockSlope = 0;          // change in (server - local) per ms of local time
+
+  function addClockSample(local, server, delay) {
+    if (clockRefLocal === null) clockRefLocal = local;
+    clockSamples.push({ local, server, delay });
+    if (clockSamples.length > MAX_CLOCK_SAMPLES) clockSamples.shift();
+    recomputeClock();
+  }
+
+  function recomputeClock() {
+    if (clockSamples.length === 0) return;
+    // Keep the lowest-delay half of samples (min 4) — closest to symmetric.
+    const sorted = [...clockSamples].sort((a, b) => a.delay - b.delay);
+    const keep = sorted.slice(0, Math.max(4, Math.ceil(sorted.length / 2)));
+    const n = keep.length;
+
+    const xs = keep.map(s => s.local - clockRefLocal);   // local time since anchor
+    const ys = keep.map(s => s.server - s.local);        // offset at that time
+    const meanX = xs.reduce((a, b) => a + b, 0) / n;
+    const meanY = ys.reduce((a, b) => a + b, 0) / n;
+
+    let num = 0, den = 0;
+    for (let i = 0; i < n; i++) {
+      num += (xs[i] - meanX) * (ys[i] - meanY);
+      den += (xs[i] - meanX) ** 2;
+    }
+    const span = Math.max(...xs) - Math.min(...xs);
+
+    // Only trust a skew estimate once samples span enough wall-clock time and
+    // we have enough of them; otherwise a short burst would fit noise as slope.
+    if (den > 0 && span > 20000 && n >= 8) {
+      clockSlope = Math.max(-5e-4, Math.min(5e-4, num / den)); // clamp to ±500ppm
+      clockIntercept = meanY - clockSlope * meanX;
+    } else {
+      clockSlope = 0;
+      clockIntercept = meanY;
+    }
+    timeSynced = true;
+  }
+
+  // One round-trip. Resolves to a sample, or null on timeout/failure.
+  function pingServerTime(timeoutMs = 3000) {
+    return new Promise((resolve) => {
+      const t0 = Date.now();
+      let done = false;
+      const timer = setTimeout(() => { if (!done) { done = true; resolve(null); } }, timeoutMs);
+      socket.emit('timeSync', { t0 }, (resp) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        const t3 = Date.now();
+        if (!resp || typeof resp.t1 !== 'number' || typeof resp.t2 !== 'number') {
+          return resolve(null);
+        }
+        // NTP: offset = ((t1 - t0) + (t2 - t3)) / 2, delay = (t3 - t0) - (t2 - t1)
+        const offset = ((resp.t1 - t0) + (resp.t2 - t3)) / 2;
+        const delay = (t3 - t0) - (resp.t2 - resp.t1);
+        const localMid = (t0 + t3) / 2;
+        resolve({ local: localMid, server: localMid + offset, delay: Math.max(0, delay) });
+      });
+    });
+  }
+
+  // Collect a burst of samples and fold them into the disciplined clock.
+  async function syncTime(silent = false) {
+    if (isSyncing) return timeSynced;
+    isSyncing = true;
+    if (!silent) {
+      document.getElementById('latencyDisplay').textContent = 'Syncing with server...';
+    }
+    try {
+      const burst = timeSynced ? 6 : 16; // fewer probes on periodic re-sync
+      let good = 0;
+      for (let i = 0; i < burst; i++) {
+        const s = await pingServerTime();
+        if (s) { addClockSample(s.local, s.server, s.delay); good++; }
+        await new Promise(r => setTimeout(r, 40 + Math.random() * 40));
+      }
+
+      if (good === 0) {
+        if (!silent && !timeSynced) {
+          document.getElementById('latencyDisplay').textContent = 'Time sync failed. Please refresh.';
+        }
+        return timeSynced;
+      }
+
+      const oneWay = Math.round(Math.min(...clockSamples.map(s => s.delay)) / 2);
+      if (!silent) {
+        document.getElementById('latencyDisplay').textContent =
+          `Sync ~${Math.max(0, oneWay)}ms${clockSlope ? ' · drift-corrected' : ''}`;
+      }
+      console.log('Sync complete. intercept:', Math.round(clockIntercept),
+        'ms, slope:', clockSlope.toExponential(2), 'best one-way:', oneWay, 'ms');
+      return true;
+    } catch (error) {
+      console.error('Failed to sync time:', error);
+      if (!silent && !timeSynced) {
+        document.getElementById('latencyDisplay').textContent = 'Time sync failed. Please refresh.';
+      }
+      return timeSynced;
+    } finally {
+      isSyncing = false;
+    }
+  }
+
+  function globalNow() {
+    if (clockRefLocal === null) return Date.now();
+    const now = Date.now();
+    return now + clockIntercept + clockSlope * (now - clockRefLocal);
+  }
+
+  // Pre-build noise buffers to avoid per-tick allocations
+  const clickBuffers = { normal: null, accent: null };
+  function buildClickBuffers() {
+    const normalLen = 0.05;
+    const accentLen = 0.08;
+    const normalBuf = audioCtx.createBuffer(1, audioCtx.sampleRate * normalLen, audioCtx.sampleRate);
+    const normalData = normalBuf.getChannelData(0);
+    for (let i = 0; i < normalData.length; i++) {
+      normalData[i] = (Math.random() * 2 - 1) * Math.exp(-i / 200);
+    }
+    const accentBuf = audioCtx.createBuffer(1, audioCtx.sampleRate * accentLen, audioCtx.sampleRate);
+    const accentData = accentBuf.getChannelData(0);
+    for (let i = 0; i < accentData.length; i++) {
+      accentData[i] = (Math.random() * 2 - 1) * Math.exp(-i / 140);
+    }
+    clickBuffers.normal = normalBuf;
+    clickBuffers.accent = accentBuf;
+  }
+  buildClickBuffers();
+
+  function scheduleClick(time, isAccent = false) {
+    const noiseLength = isAccent ? 0.08 : 0.05;
+    const buffer = isAccent ? clickBuffers.accent : clickBuffers.normal;
+    const noise = audioCtx.createBufferSource();
+    noise.buffer = buffer;
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(isAccent ? 2.0 : 1.0, time);
+    gain.gain.linearRampToValueAtTime(0.001, time + noiseLength);
+    noise.connect(gain).connect(audioCtx.destination);
+    noise.start(time);
+    const osc = audioCtx.createOscillator();
+    const oscGain = audioCtx.createGain();
+    osc.type = isAccent ? 'square' : 'triangle';
+    osc.frequency.setValueAtTime(isAccent ? 1500 : 1000, time);
+    oscGain.gain.setValueAtTime(isAccent ? 10.0 : 5.0, time);
+    oscGain.gain.linearRampToValueAtTime(0.001, time + (isAccent ? 0.09 : 0.05));
+    osc.connect(oscGain).connect(audioCtx.destination);
+    osc.start(time);
+    osc.stop(time + (isAccent ? 0.09 : 0.05));
+  }
+
+  function tickLoop() {
+    if (!isRunning) return;
+    try {
+      const interval = (60 / bpm) / subdivision;
+      const now = audioCtx.currentTime;
+      const [numerator, denominator] = timeSignature.split('/').map(Number);
+      const ticksPerBar = numerator * subdivision;
+
+      // Local stall guard (host + followers, no server involved at all): if
+      // the JS timer chain itself stalled (tab backgrounded, main-thread
+      // jank) long enough that nextTick fell behind the audio clock by more
+      // than one lookahead buffer's worth, skip forward with pure local
+      // arithmetic instead of flooding Web Audio with a burst of ticks that
+      // are all in the past and get clamped to "now" — i.e. several beeps
+      // firing at once. This runs every tick (not gated to the 2s check
+      // below) so it catches a stall immediately once the JS thread resumes.
+      const behindBy = now - nextTick;
+      if (behindBy > 0.3) {
+        const missedTicks = Math.floor(behindBy / interval) + 1;
+        console.log(`Stall recovery: skipping ${missedTicks} tick(s), fell behind by ${(behindBy * 1000).toFixed(0)}ms`);
+        nextTick += missedTicks * interval;
+        beatCount += missedTicks;
+      }
+
+      // Re-anchor timing to the server clock every ~2s — followers only.
+      // The host is a fully self-referential timing anchor: once started,
+      // its tick grid is driven purely by its own audio hardware clock and
+      // is never nudged by the server clock for any reason, so the host's
+      // beep can't be made to drift, glitch, or hiccup by network/server
+      // conditions. Followers keep disciplining against the server clock so
+      // they stay locked to the host's timeline (and to each other).
+      if (role !== 'host' && now - lastDriftCheck > 2.0 && startTime && timeSynced) {
+        lastDriftCheck = now;
+        const serverNow = globalNow();
+        const intervalMs = (60000 / bpm) / subdivision;
+        const hardwareLatency = (audioCtx.outputLatency || 0) + (audioCtx.baseLatency || 0);
+
+        // Compare nextTick against where the beat it already represents
+        // (beatCount) should sit on the audio clock — not "the next tick
+        // from right now", which is a different beat and would always look
+        // "late" by about one lookahead-buffer's worth, causing a false
+        // re-anchor (and a duplicate, already-scheduled beat) on every
+        // check even with perfectly matched clocks.
+        const targetMs = startTime + beatCount * intervalMs;
+        const targetAudio = now + (targetMs - serverNow) / 1000 - hardwareLatency;
+        const drift = nextTick - targetAudio;
+        if (Math.abs(drift) > 0.05) {
+          // Large drift (audio glitch): hard re-anchor, same beat.
+          console.log(`Hard re-anchor: ${(drift * 1000).toFixed(1)}ms`);
+          nextTick = targetAudio;
+        } else if (Math.abs(drift) > 0.002) {
+          // Small drift: slew gently toward target to avoid an audible jump.
+          nextTick -= drift * 0.3;
+        }
+      }
+
+      while (nextTick < now + 0.3) {
+        const currentBeat = Math.floor(beatCount / subdivision);
+        const isFirstBeat = (beatCount % ticksPerBar === 0) && accentEnabled;
+        const isMainBeat = (beatCount % subdivision === 0);
+        scheduleClick(nextTick, isFirstBeat);
+        if (isMainBeat) {
+          const visualBeat = currentBeat % numerator;
+          requestAnimationFrame(() => {
+            highlightDot(visualBeat);
+            flashScreen(isFirstBeat);
+          });
+        }
+        nextTick += interval;
+        beatCount++;
+      }
+      tickTimer = setTimeout(tickLoop, 25);
+    } catch (error) {
+      console.error('Error in tick loop:', error);
+      if (isRunning) {
+        tickTimer = setTimeout(() => {
+          if (isRunning) tickLoop();
+        }, 1000);
+      }
+    }
+  }
+
+  function syncClock(data) {
+    bpm = data.bpm;
+    subdivision = data.subdivision || 1;
+    timeSignature = data.timeSignature || '4/4';
+    accentEnabled = data.accentEnabled !== undefined ? data.accentEnabled : accentEnabled;
+    bpmInput.value = bpm;
+    bpmSlider.value = bpm;
+    updateSliderFill(bpmSlider);
+    document.getElementById("bpmDisplay").textContent = `${bpm}`;
+    updateTimeSignatureVisual(timeSignature);
+    updateSubdivisionVisual(subdivision);
+    updateBeatDots();
+    const wasRunning = isRunning;
+    isRunning = data.isRunning;
+    document.body.classList.toggle('playing', isRunning);
+    if (role === 'host') {
+      startButton.disabled = isRunning;
+      stopButton.disabled = !isRunning;
+    }
+    if (!isRunning && wasRunning) {
+      if (tickTimer) {
+        clearTimeout(tickTimer);
+        tickTimer = null;
+      }
+      if (syncTimeout) {
+        clearTimeout(syncTimeout);
+        syncTimeout = null;
+      }
+      document.querySelectorAll('.dot').forEach(dot => dot.classList.remove('active'));
+      releaseScreenWake();
+      return;
+    }
+    if (isRunning && data.startTime) {
+      if (wasRunning && tickTimer) {
+        clearTimeout(tickTimer);
+        tickTimer = null;
+      }
+      if (!timeSynced) return;
+      acquireScreenWake();
+      startTime = data.startTime;
+      startMetronomeSync();
+    }
+  }
+
+  function startMetronomeSync() {
+    if (syncTimeout) {
+      clearTimeout(syncTimeout);
+      syncTimeout = null;
+    }
+    try {
+      audioCtx.resume().then(() => {
+        const now = globalNow();
+        const intervalMs = (60000 / bpm) / subdivision;
+        const elapsedMs = now - startTime;
+        const ticksSinceStart = Math.floor(elapsedMs / intervalMs);
+        const nextTickTimeMs = startTime + (ticksSinceStart + 1) * intervalMs;
+        const delayMs = nextTickTimeMs - now;
+
+        // Calculate the precise AudioContext time for the next tick
+        // We map the target Server Time to AudioContext time
+        // Relation: AudioTime = CurrentAudioTime + (TargetServerTime - CurrentServerTime)
+        // Note: dividing by 1000 because audioCtx uses seconds
+        const delaySec = delayMs / 1000;
+
+        // Compensate for Output Latency if available (experimental feature)
+        // audioCtx.outputLatency is the time from processing to sound output
+        // We subtract it to schedule the sound earlier so it *arrives* on time
+        const hardwareLatency = (audioCtx.outputLatency || 0) + (audioCtx.baseLatency || 0);
+
+        // Set nextTick anchor based on the math, not "now"
+        nextTick = audioCtx.currentTime + delaySec - hardwareLatency;
+        lastDriftCheck = audioCtx.currentTime;
+
+        const clampedDelay = Math.max(0, Math.min(1000, delayMs));
+
+        syncTimeout = setTimeout(() => {
+          syncTimeout = null;
+          // Don't reset nextTick here! It's already set precisely above.
+          // Just update the beat count
+          beatCount = ticksSinceStart + 1;
+          tickLoop();
+        }, clampedDelay);
+      }).catch(err => {
+        console.error('Audio context resume error:', err);
+      });
+    } catch (error) {
+      console.error('Error starting metronome:', error);
+    }
+  }
+
+  socket.on('sync', syncClock);
+
+  // Handle tab visibility changes
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      // Re-acquire wake lock (it releases when tab goes to background)
+      if (isRunning) {
+        requestWakeLock();
+      }
+      // Followers only — the host is a self-referential timing anchor and
+      // never re-syncs to the server clock (see tickLoop). The host's own
+      // tick loop recovers from any backgrounding gap on its own via the
+      // local stall guard once its JS timer chain resumes.
+      if (role !== 'host' && isRunning && startTime && timeSynced) {
+        syncTime(true).then(() => {
+          if (isRunning && startTime) {
+            if (tickTimer) {
+              clearTimeout(tickTimer);
+              tickTimer = null;
+            }
+            startMetronomeSync();
+          }
+        });
+      }
+    }
+  });
+
+  function startPeriodicReSync() {
+    // Followers only — periodic re-sync refines the disciplined clock's
+    // skew estimate so followers stay locked to the server (and thus the
+    // host's timeline). The host never re-syncs: it's a self-referential
+    // timing anchor, so its beep is never touched by network/server
+    // conditions after the initial start.
+    if (role === 'host') return;
+    stopPeriodicReSync();
+    reSyncInterval = setInterval(() => {
+      if (timeSynced) syncTime(true);
+    }, 30000);
+  }
+
+  function stopPeriodicReSync() {
+    if (reSyncInterval) {
+      clearInterval(reSyncInterval);
+      reSyncInterval = null;
+    }
+  }
+
+  socket.on('clientCount', (count) => {
+    const otherCount = count - 1;
+    document.getElementById("statusDisplay").textContent = otherCount === 1
+      ? `1 other device connected`
+      : `${otherCount} other devices connected`;
+  });
+
+  // Connection status indicator
+  function updateConnectionStatus(connected) {
+    const dot = document.getElementById('connectionDot');
+    const label = document.getElementById('connectionLabel');
+    dot.className = 'connection-dot ' + (connected ? 'connected' : 'disconnected');
+    label.textContent = connected ? 'Connected' : 'Reconnecting...';
+  }
+
+  // Re-identify role and re-sync on socket reconnection
+  socket.on('connect', () => {
+    updateConnectionStatus(true);
+    if (!timeSynced) {
+      // Warm up the disciplined clock in the background as soon as we're
+      // connected, even before a room is chosen, so it's ready by the time
+      // Host/Follow is picked.
+      syncTime(true);
+    }
+    if (role) {
+      socket.emit('identify', { role, roomId: currentRoomId });
+      // Re-sync on reconnect for both roles — the socket (and thus the
+      // sync round-trip path) is new, so refresh the clock estimate.
+      syncTime(true);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    updateConnectionStatus(false);
+  });
+
+  // No client-side reaction needed to hostAvailability any more: creating a
+  // room on the landing page always succeeds (it's always a fresh room), so
+  // there's no "occupied" state to reflect before you've even joined one.
+  // The event is still sent (a follower's room might currently be
+  // hostless/mid-grace-period) but nothing here needs it today.
+  socket.on('hostAvailability', () => {});
+
+  socket.on('roomClosed', (data) => {
+    const reason = data && data.reason;
+    currentRoomId = null;
+    role = null;
+    isRunning = false;
+    if (tickTimer) { clearTimeout(tickTimer); tickTimer = null; }
+    if (syncTimeout) { clearTimeout(syncTimeout); syncTimeout = null; }
+    stopPeriodicReSync();
+    releaseScreenWake();
+    document.body.classList.remove('role-host');
+    document.body.classList.toggle('playing', false);
+    metronomeControls.style.display = 'none';
+    document.getElementById('hostControls').style.display = 'none';
+    roleChooser.style.display = 'block';
+    document.getElementById('roomNotFound').style.display = 'none';
+    document.getElementById('landingChooser').style.display = 'block';
+    window.history.pushState({}, '', '/');
+    const message = reason === 'host_left'
+      ? 'The host left — this room has closed.'
+      : 'This room is no longer available.';
+    alert(message);
+  });
+
+  function renderRoomList(rooms) {
+    const list = document.getElementById('roomList');
+    const empty = document.getElementById('roomListEmpty');
+    if (!list || !empty) return;
+    list.innerHTML = '';
+    if (!rooms || rooms.length === 0) {
+      empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+    rooms.forEach((r) => {
+      const li = document.createElement('li');
+      li.className = 'room-row';
+      li.setAttribute('role', 'button');
+      li.setAttribute('tabindex', '0');
+      const statusClass = r.isRunning ? 'playing' : 'stopped';
+      const peopleLabel = r.participantCount === 1 ? 'person' : 'people';
+      li.innerHTML = `
+        <span class="room-row-label">Room ${r.roomId}</span>
+        <span class="room-row-meta">
+          <span class="room-status-dot ${statusClass}"></span>
+          ${r.participantCount} ${peopleLabel}
+        </span>
+      `;
+      li.addEventListener('click', () => attemptJoinRoom(r.roomId));
+      li.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          attemptJoinRoom(r.roomId);
+        }
+      });
+      list.appendChild(li);
+    });
+  }
+
+  socket.on('roomList', renderRoomList);
+
+  function updateSettings() {
+    if (role !== 'host') return;
+    const ts = document.getElementById("timeSigInput").value;
+    const subdiv = parseInt(document.getElementById("subdivisionInput").value);
+    updateTimeSignatureVisual(ts);
+    updateSubdivisionVisual(subdiv);
+    updateBeatDots();
+
+    const payload = {
+      bpm,
+      timeSignature: ts,
+      subdivision: subdiv
+    };
+
+    if (isRunning) {
+      const delayMs = (nextTick - audioCtx.currentTime) * 1000;
+      const nextBeatTime = globalNow() + delayMs;
+      const newInterval = (60000 / bpm) / subdiv;
+      payload.startTime = nextBeatTime - (beatCount * newInterval);
+    }
+
+    socket.emit('updateSettings', payload);
+  }
+
+  document.getElementById("timeSigInput").addEventListener('change', function () {
+    updateTimeSignatureVisual(this.value);
+    updateSettings();
+  });
+
+  document.getElementById("subdivisionInput").addEventListener('change', function () {
+    updateSubdivisionVisual(parseInt(this.value));
+    updateSettings();
+  });
+
+  function startMetronome() {
+    if (role !== 'host') return;
+    acquireScreenWake();
+    startButton.disabled = true;
+    socket.emit('startMetronome');
+  }
+
+  function stopMetronome() {
+    if (role !== 'host') return;
+    isRunning = false;
+    stopButton.disabled = true;
+    if (tickTimer) {
+      clearTimeout(tickTimer);
+      tickTimer = null;
+    }
+    if (syncTimeout) {
+      clearTimeout(syncTimeout);
+      syncTimeout = null;
+    }
+    document.querySelectorAll('.dot').forEach(dot => dot.classList.remove('active'));
+    releaseScreenWake();
+    socket.emit('stopMetronome');
+  }
+
+  function parseRoomIdFromPath() {
+    const m = window.location.pathname.match(/^\/r\/(\d+)$/);
+    return m ? parseInt(m[1], 10) : null;
+  }
+
+  function updateRoomUrl(roomId) {
+    const newPath = `/r/${roomId}`;
+    if (window.location.pathname !== newPath) {
+      window.history.pushState({ roomId }, '', newPath);
+    }
+  }
+
+  function goToLanding() {
+    window.history.pushState({}, '', '/');
+    pendingHostRoomId = null;
+    document.getElementById('roomNotFound').style.display = 'none';
+    document.getElementById('landingChooser').style.display = 'block';
+  }
+
+  function ensureTimeSynced() {
+    if (timeSynced) return Promise.resolve(true);
+    return syncTime();
+  }
+
+  // Sets up the room UI once a room has actually been joined (after a
+  // createRoom/joinRoom ack succeeds). Unlike the old setRole(r), this no
+  // longer does any socket.emit itself -- that already happened via
+  // createRoom/joinRoom's callback.
+  function setRole(r, roomId) {
+    role = r;
+    currentRoomId = roomId;
+    roleChooser.style.display = 'none';
+    metronomeControls.style.display = 'block';
+    const isHost = r === 'host';
+    document.body.classList.toggle('role-host', isHost);
+    document.getElementById("hostControls").style.display = isHost ? 'block' : 'none';
+    clientVisuals.style.display = isHost ? 'none' : 'flex';
+    document.getElementById("bpmDisplay").style.display = isHost ? 'none' : 'block';
+    document.getElementById("statusInfo").style.display = isHost ? 'none' : 'block';
+    updateBeatDots();
+    updateTimeSignatureVisual(timeSignature);
+    updateSubdivisionVisual(subdivision);
+
+    const label = `Room ${roomId}`;
+    const roomIdDisplay = document.getElementById('roomIdDisplay');
+    if (roomIdDisplay) roomIdDisplay.textContent = label;
+    const roomIdStatusDisplay = document.getElementById('roomIdStatusDisplay');
+    if (roomIdStatusDisplay) roomIdStatusDisplay.textContent = label;
+    if (isHost) {
+      renderJoinQR(roomId);
+      renderPresets();
+    }
+
+    startPeriodicReSync();
+  }
+
+  function attemptJoinRoom(roomId) {
+    ensureTimeSynced().then((ok) => {
+      if (!ok) return;
+      socket.emit('joinRoom', { roomId }, (response) => {
+        if (response && response.ok) {
+          updateRoomUrl(roomId);
+          setRole('client', roomId);
+        } else {
+          showRoomNotFound(roomId);
+        }
+      });
+    });
+  }
+
+  function showRoomNotFound(roomId) {
+    pendingHostRoomId = roomId;
+    document.getElementById('landingChooser').style.display = 'none';
+    document.getElementById('roomNotFound').style.display = 'block';
+    document.getElementById('notFoundRoomId').textContent = roomId;
+  }
+
+  function handleCreateRoom() {
+    ensureTimeSynced().then((ok) => {
+      if (!ok) return;
+      socket.emit('createRoom', {}, (response) => {
+        updateRoomUrl(response.roomId);
+        setRole('host', response.roomId);
+      });
+    });
+  }
+
+  function handleHostFallback() {
+    const roomId = pendingHostRoomId;
+    if (!roomId) return;
+    ensureTimeSynced().then((ok) => {
+      if (!ok) return;
+      socket.emit('createRoom', { roomId }, (response) => {
+        if (response && response.roomId) {
+          updateRoomUrl(response.roomId);
+          setRole('host', response.roomId);
+        } else {
+          alert('That room number was just claimed by someone else. Please try again.');
+        }
+      });
+    });
+  }
+
+  let selectedPresetIndex = 0;
+  let dragFromIndex = null;
+
+  function getPresets() {
+    return JSON.parse(localStorage.getItem('metronomePresets') || '[]');
+  }
+
+  function setPresets(presets) {
+    localStorage.setItem('metronomePresets', JSON.stringify(presets));
+  }
+
+  function savePreset(preset) {
+    const presets = getPresets();
+    presets.push(preset);
+    setPresets(presets);
+  }
+
+  function deletePreset(index) {
+    const presets = getPresets();
+    presets.splice(index, 1);
+    setPresets(presets);
+  }
+
+  function handleSavePreset() {
+    const ts = document.getElementById("timeSigInput").value;
+    const subdiv = parseInt(document.getElementById("subdivisionInput").value);
+    const name = `${bpm} BPM, ${ts}, Sub: ${subdiv}`;
+    const preset = {
+      name,
+      bpm,
+      timeSignature: ts,
+      subdivision: subdiv,
+    };
+    savePreset(preset);
+    selectedPresetIndex = 0;
+    renderPresets();
+  }
+
+  function handleLoadPreset(idx) {
+    const preset = getPresets()[idx];
+    if (preset) {
+      selectedPresetIndex = idx;
+      bpm = preset.bpm;
+      document.getElementById("bpmSlider").value = bpm;
+      document.getElementById("bpmValue").value = bpm;
+      updateSliderFill(bpmSlider);
+      document.getElementById("bpmDisplay").textContent = `${bpm}`;
+      document.getElementById("timeSigInput").value = preset.timeSignature;
+      document.getElementById("subdivisionInput").value = preset.subdivision;
+      updateTimeSignatureVisual(preset.timeSignature);
+      updateSubdivisionVisual(preset.subdivision);
+      updateSettings();
+      renderPresets();
+    }
+  }
+
+  function handleDeletePreset(idx) {
+    deletePreset(idx);
+    if (selectedPresetIndex >= idx) {
+      selectedPresetIndex = Math.max(0, selectedPresetIndex - 1);
+    }
+    renderPresets();
+  }
+
+  function handleDragStart(idx) {
+    dragFromIndex = idx;
+  }
+
+  function reorderPresets(fromIdx, toIdx) {
+    if (fromIdx === null || fromIdx === toIdx) return;
+    const presets = getPresets();
+    const selectedPreset = presets[selectedPresetIndex];
+    const [moved] = presets.splice(fromIdx, 1);
+    presets.splice(toIdx, 0, moved);
+    setPresets(presets);
+    const newSelectedIndex = presets.indexOf(selectedPreset);
+    selectedPresetIndex = newSelectedIndex === -1 ? 0 : newSelectedIndex;
+    renderPresets();
+  }
+
+  function handleDrop(idx) {
+    reorderPresets(dragFromIndex, idx);
+    dragFromIndex = null;
+  }
+
+  // Touch devices don't fire native HTML5 drag events, so reordering on
+  // phones is driven by touch tracking on a dedicated handle instead.
+  let touchDragIndex = null;
+  let touchOverIndex = null;
+
+  function clearDragVisuals() {
+    document.querySelectorAll('#presetList li.dragging, #presetList li.drag-over')
+      .forEach(el => el.classList.remove('dragging', 'drag-over'));
+  }
+
+  function handleTouchStart(idx, li) {
+    touchDragIndex = idx;
+    touchOverIndex = idx;
+    li.classList.add('dragging');
+  }
+
+  function handleTouchMove(e) {
+    if (touchDragIndex === null) return;
+    e.preventDefault();
+    const touch = e.touches[0];
+    const target = document.elementFromPoint(touch.clientX, touch.clientY);
+    const li = target && target.closest('#presetList li');
+    document.querySelectorAll('#presetList li.drag-over').forEach(el => el.classList.remove('drag-over'));
+    if (li) {
+      touchOverIndex = parseInt(li.dataset.index, 10);
+      li.classList.add('drag-over');
+    }
+  }
+
+  function handleTouchEnd() {
+    if (touchDragIndex === null) return;
+    clearDragVisuals();
+    reorderPresets(touchDragIndex, touchOverIndex);
+    touchDragIndex = null;
+    touchOverIndex = null;
+  }
+
+  function renderPresets() {
+    const list = document.getElementById('presetList');
+    list.innerHTML = '';
+    const presets = getPresets();
+    if (selectedPresetIndex > presets.length - 1) {
+      selectedPresetIndex = presets.length ? 0 : -1;
+    }
+    presets.forEach((preset, i) => {
+      const li = document.createElement('li');
+      li.draggable = true;
+      li.dataset.index = i;
+      li.className = i === selectedPresetIndex ? 'selected' : '';
+      li.addEventListener('dragstart', () => handleDragStart(i));
+      li.addEventListener('dragover', (e) => e.preventDefault());
+      li.addEventListener('drop', () => handleDrop(i));
+      li.innerHTML = `
+      <span class="preset-drag-handle">&#8942;&#8942;</span>
+      <span class="preset-info" onclick="handleLoadPreset(${i})">
+        ${preset.bpm} BPM ${preset.timeSignature}, ${subdivisionToText(preset.subdivision)}
+      </span>
+      <span class="preset-actions">
+        <button class="preset-btn preset-btn-delete" onclick="handleDeletePreset(${i})">discard</button>
+      </span>
+    `;
+      const handle = li.querySelector('.preset-drag-handle');
+      handle.addEventListener('touchstart', () => handleTouchStart(i, li), { passive: true });
+      handle.addEventListener('touchmove', handleTouchMove, { passive: false });
+      handle.addEventListener('touchend', handleTouchEnd);
+      list.appendChild(li);
+    });
+  }
+
+  // Keyboard shortcuts: ignored while typing in a text/number field or a
+  // dropdown, so BPM entry and dropdowns aren't hijacked. The BPM range
+  // slider is exempt — it keeps focus after a drag, but it's not a typing
+  // field, so shortcuts should still work while it's focused.
+  document.addEventListener('keydown', (e) => {
+    const target = e.target;
+    const tag = (target && target.tagName || '').toLowerCase();
+    const isRangeInput = tag === 'input' && target.type === 'range';
+    if (!isRangeInput && (tag === 'input' || tag === 'select' || tag === 'textarea')) return;
+
+    if (role !== 'host') return;
+
+    if (e.key.toLowerCase() === 'b') {
+      e.preventDefault();
+      toggleAccent();
+      return;
+    }
+
+    if (e.code === 'Space') {
+      e.preventDefault();
+      isRunning ? stopMetronome() : startMetronome();
+      return;
+    }
+
+    const key = e.key.toLowerCase();
+    if (key === 's') {
+      e.preventDefault();
+      handleSavePreset();
+    } else if (key === 'm') {
+      e.preventDefault();
+      changeBpm(1);
+    } else if (key === 'n') {
+      e.preventDefault();
+      changeBpm(-1);
+    } else if (key >= '1' && key <= '9') {
+      const idx = parseInt(key, 10) - 1;
+      if (getPresets()[idx]) {
+        e.preventDefault();
+        handleLoadPreset(idx);
+      }
+    }
+  });
+
+  function subdivisionToText(subdivision) {
+    switch (subdivision) {
+      case 1: return 'quarter';
+      case 2: return 'eighth';
+      case 3: return 'triplet';
+      case 4: return 'sixteenth';
+      default: return 'custom';
+    }
+  }
+</script>
+
+<script>
+    // The standalone app uses its own audio clock and opens directly to controls.
+    timeSynced = true;
+    renderJoinQR = function () {};
+    setRole('host', 1);
+    updateConnectionStatus(true);
+    document.getElementById('connectionLabel').textContent = 'Offline · Local metronome';
+    document.title = 'Synced Metronome — Standalone';
+  </script>
+</html>

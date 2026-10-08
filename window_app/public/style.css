@@ -1,0 +1,942 @@
+:root {
+    --primary: #f5f5f5;
+    --primary-dark: #bbb;
+    --accent: #ff9800;
+    --accent-light: #ffd180;
+    --accent-dim: #ff980033;
+    --bg: #0e0e10;
+    --bg-card: rgba(255, 255, 255, 0.04);
+    --bg-card-border: rgba(255, 255, 255, 0.08);
+    --bg-input: rgba(0, 0, 0, 0.35);
+    --shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+    --radius: 1.25rem;
+    --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    background: var(--bg);
+    color: var(--primary);
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+    min-height: 100dvh;
+    text-align: center;
+    margin: 0;
+    padding: 1rem 1rem 2rem;
+    transition: background 0.6s ease;
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* Subtle gradient overlay when playing */
+body.playing {
+    background: #120d06;
+}
+
+body.playing::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background: radial-gradient(ellipse at 50% 40%, #ff980018 0%, transparent 70%);
+    animation: aura-breathe 3.5s ease-in-out infinite alternate;
+}
+
+@keyframes aura-breathe {
+    0% { opacity: 0.6; }
+    100% { opacity: 1; }
+}
+
+body > * {
+    position: relative;
+    z-index: 1;
+}
+
+/* Flash feedback */
+body.flash {
+    background-color: #1a1a1a !important;
+    transition: background-color 0.05s;
+}
+
+body.flash-accent {
+    background-color: #2a1a00 !important;
+    transition: background-color 0.05s;
+}
+
+/* ── Header ── */
+h1 {
+    margin: 0 0 0.3rem;
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--primary);
+    letter-spacing: -0.5px;
+}
+
+.version-display {
+    font-size: 0.75rem;
+    color: #555;
+    margin-bottom: 0.2rem;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.version-meta {
+    font-size: 0.72rem;
+    color: #444;
+    margin-bottom: 1rem;
+    line-height: 1.5;
+}
+
+.version-meta p {
+    margin: 0;
+}
+
+/* ── Connection status ── */
+.connection-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.75rem;
+    color: #666;
+    margin-bottom: 1rem;
+}
+
+.connection-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #555;
+    transition: background var(--transition);
+}
+
+.connection-dot.connected {
+    background: #4caf50;
+    box-shadow: 0 0 6px #4caf5088;
+}
+
+.connection-dot.disconnected {
+    background: #f44336;
+    box-shadow: 0 0 6px #f4433688;
+}
+
+/* ── Card ── */
+.card {
+    background: var(--bg-card);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: var(--radius);
+    padding: 1.5rem 1.25rem;
+    margin: 0 auto;
+    max-width: 420px;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--bg-card-border);
+    transition: background 0.5s, box-shadow 0.5s, border-color 0.5s;
+}
+
+body.playing .card {
+    background: rgba(255, 152, 0, 0.03);
+    border-color: rgba(255, 152, 0, 0.12);
+    box-shadow: 0 0 40px 0 #ff980015, var(--shadow);
+}
+
+/* ── Beat Dots ── */
+.beat-indicators {
+    display: flex;
+    justify-content: center;
+    gap: 1.2rem;
+    margin: 1.2rem auto 1rem;
+}
+
+.dot {
+    width: 2.8rem;
+    height: 2.8rem;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.04);
+    border: 2px solid rgba(255, 255, 255, 0.06);
+    transition: all 0.12s ease-out;
+    position: relative;
+}
+
+.dot::after {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    transition: border-color 0.15s, transform 0.15s;
+}
+
+.dot.active {
+    background: radial-gradient(circle at 40% 35%, #ffb74d, #ff9800);
+    border-color: var(--accent);
+    transform: scale(1.15);
+    box-shadow: 0 0 20px #ff980066, 0 0 40px #ff980022;
+}
+
+.dot.active::after {
+    border-color: rgba(255, 152, 0, 0.25);
+    transform: scale(1.15);
+    animation: dot-ring 0.3s ease-out;
+}
+
+@keyframes dot-ring {
+    0% { transform: scale(0.8); opacity: 1; }
+    100% { transform: scale(1.4); opacity: 0; }
+}
+
+.dot.accent.active {
+    background: radial-gradient(circle at 40% 35%, #ffe0b2, #ffb74d);
+    box-shadow: 0 0 24px #ffd18088, 0 0 50px #ff980033;
+    border-color: #fff;
+}
+
+/* The first-beat dot always doubles as the accent on/off toggle, whether
+   or not the accent is currently enabled. These :not(.active) rules give
+   it a bold, unmistakable rest state so ON vs OFF reads clearly whether
+   the metronome is running or stopped — not just during the beat flash. */
+body.role-host .dot.accent-toggle {
+    cursor: pointer;
+}
+
+.dot.accent-toggle.accent:not(.active) {
+    background: rgba(255, 152, 0, 0.16);
+    border-style: solid;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(255, 152, 0, 0.16);
+}
+
+.dot.accent-toggle.accent:not(.active)::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 50%;
+    background: var(--accent);
+    transform: translate(-50%, -50%);
+}
+
+.dot.accent-toggle:not(.accent):not(.active) {
+    border-style: dashed;
+    border-color: rgba(255, 255, 255, 0.25);
+    opacity: 0.5;
+}
+
+body.role-host .dot.accent-toggle.accent:not(.active):hover,
+body.role-host .dot.accent-toggle.accent:not(.active):focus-visible {
+    transform: scale(1.08);
+}
+
+body.role-host .dot.accent-toggle:not(.accent):not(.active):hover,
+body.role-host .dot.accent-toggle:not(.accent):not(.active):focus-visible {
+    opacity: 1;
+    border-color: var(--accent);
+    transform: scale(1.08);
+}
+
+.dot.accent-toggle:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+}
+
+/* ── Buttons ── */
+button {
+    padding: 0.7rem 1.5rem;
+    font-size: 0.95rem;
+    margin: 0.25rem;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 0.75rem;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--primary);
+    cursor: pointer;
+    box-shadow: none;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    transition: all var(--transition);
+    -webkit-tap-highlight-color: transparent;
+}
+
+button:hover {
+    background: var(--accent);
+    color: #111;
+    border-color: var(--accent);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px #ff980044;
+}
+
+button:active {
+    transform: scale(0.97);
+}
+
+button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+button:focus:not(:focus-visible) {
+    outline: none;
+}
+
+button:disabled {
+    background: rgba(255, 255, 255, 0.03);
+    color: #444;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+    border-color: rgba(255, 255, 255, 0.04);
+    opacity: 0.5;
+}
+
+/* Stop button */
+button.stop {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--primary);
+}
+
+body.playing button.stop:not(:disabled) {
+    background: var(--accent);
+    color: #111;
+    border-color: var(--accent);
+}
+
+button.stop:hover:not(:disabled) {
+    background: #ffb74d;
+    color: #111;
+}
+
+button.stop:disabled {
+    background: rgba(255, 255, 255, 0.03);
+    color: #444;
+    box-shadow: none;
+    border-color: rgba(255, 255, 255, 0.04);
+}
+
+/* ── Role Chooser ── */
+#roleChooser .button-group {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+    max-width: 280px;
+    margin: 1rem auto;
+}
+
+#roleChooser button {
+    width: 100%;
+    margin: 0;
+    padding: 1rem 1.2rem;
+    font-size: 1.05rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+#roleChooser button .role-desc {
+    font-size: 0.72rem;
+    font-weight: 400;
+    opacity: 0.5;
+    letter-spacing: 0;
+}
+
+#roleChooser button:hover .role-desc {
+    opacity: 0.8;
+}
+
+#hostTakenMsg {
+    font-size: 0.82rem;
+    color: #e57373;
+    margin-top: 0.5rem;
+}
+
+/* ── BPM Display (client view) ── */
+#bpmDisplay {
+    font-size: 4.5rem;
+    font-weight: 800;
+    color: var(--primary);
+    margin: 0.2rem 0;
+    letter-spacing: -3px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+}
+
+body.playing #bpmDisplay {
+    text-shadow: 0 0 30px #ff980040;
+}
+
+/* ── BPM Controls (host view) ── */
+.bpm-controls {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+}
+
+.bpm-buttons {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.bpm-buttons button {
+    font-size: 1.3rem;
+    width: 2.8rem;
+    height: 2.8rem;
+    padding: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--accent);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+}
+
+.bpm-buttons button:hover {
+    background: var(--accent);
+    color: #111;
+}
+
+#bpmValue {
+    font-size: 1.4rem;
+    width: 4.5rem;
+    text-align: center;
+    padding: 0.45rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0.6rem;
+    background: var(--bg-input);
+    color: var(--primary);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    transition: border-color var(--transition);
+}
+
+#bpmValue:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+/* ── Range Slider ── */
+input[type="range"] {
+    width: 100%;
+    max-width: 260px;
+    height: 6px;
+    border-radius: 3px;
+    appearance: none;
+    outline: none;
+    background: linear-gradient(to right,
+            var(--accent) 0%,
+            var(--accent) var(--val, 0%),
+            rgba(255, 255, 255, 0.08) var(--val, 0%),
+            rgba(255, 255, 255, 0.08) 100%);
+    transition: background 0.1s;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 0 10px #ff980044;
+    cursor: pointer;
+    transition: transform var(--transition), box-shadow var(--transition);
+}
+
+input[type="range"]:active::-webkit-slider-thumb {
+    transform: scale(1.15);
+    box-shadow: 0 0 16px #ff980066;
+}
+
+input[type="range"]::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    cursor: pointer;
+}
+
+/* ── Form Controls ── */
+.form-group {
+    margin-bottom: 0.75rem;
+}
+
+label {
+    display: block;
+    margin-bottom: 0.4rem;
+    font-weight: 500;
+    font-size: 0.85rem;
+    text-align: left;
+    color: var(--primary-dark);
+    letter-spacing: 0.02em;
+}
+
+select {
+    width: 100%;
+    padding: 0.6rem 0.8rem;
+    margin-bottom: 0.3rem;
+    border-radius: 0.6rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--bg-input);
+    color: var(--primary);
+    font-size: 0.95rem;
+    transition: border-color var(--transition);
+    cursor: pointer;
+}
+
+select:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.settings-grid {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.button-group {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.75rem;
+    margin-top: 1rem;
+}
+
+/* ── Status Info ── */
+#statusDisplay {
+    margin-top: 1rem;
+    font-size: 0.85rem;
+    color: rgba(255, 152, 0, 0.6);
+    font-weight: 500;
+}
+
+#latencyDisplay {
+    font-size: 0.82rem;
+    margin-top: 0.4rem;
+    color: rgba(255, 209, 128, 0.7);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ── Preset Bank ── */
+#presetBank {
+    margin-top: 1.5rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    padding-top: 1rem;
+}
+
+#presetBank h3 {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--primary-dark);
+    margin: 0 0 0.6rem;
+    letter-spacing: 0.02em;
+}
+
+#presetList {
+    list-style: none;
+    padding: 0;
+    margin: 0.5rem 0 0;
+}
+
+#presetList li {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.88rem;
+    margin: 0.3rem 0;
+    transition: opacity var(--transition);
+}
+
+#presetList li.dragging {
+    opacity: 0.4;
+}
+
+#presetList li.drag-over {
+    outline: 2px dashed var(--accent);
+    outline-offset: 2px;
+    border-radius: 0.5rem;
+}
+
+#presetList .preset-drag-handle {
+    flex-shrink: 0;
+    width: 1.6rem;
+    height: 2.4rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--primary-dark);
+    font-size: 0.9rem;
+    letter-spacing: -0.35rem;
+    cursor: grab;
+    touch-action: none;
+    opacity: 0.6;
+}
+
+#presetList .preset-drag-handle:active {
+    cursor: grabbing;
+    opacity: 1;
+}
+
+#presetList .preset-info {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0.5rem 0.6rem;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 0.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    cursor: pointer;
+    transition: background var(--transition), border-color var(--transition);
+}
+
+#presetList .preset-info:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+#presetList li.selected .preset-info {
+    background: var(--accent-dim);
+    border-color: var(--accent);
+    color: var(--accent-light);
+}
+
+#presetList .preset-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+#presetList button.preset-btn {
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.03);
+    font-size: 0.78rem;
+    color: var(--accent);
+    padding: 0.35rem 0.6rem;
+    border-radius: 0.4rem;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all var(--transition);
+}
+
+#presetList button.preset-btn:hover {
+    background: rgba(255, 152, 0, 0.12);
+    transform: none;
+    box-shadow: none;
+}
+
+#presetList button.preset-btn-delete {
+    color: #ff6b6b;
+}
+
+#presetList button.preset-btn-delete:hover {
+    background: rgba(255, 107, 107, 0.12);
+    border-color: rgba(255, 107, 107, 0.3);
+}
+
+/* ── Keyboard shortcuts mini-panel (host only) ── */
+#shortcutsPanel {
+    margin-top: 1.25rem;
+    padding-top: 0.85rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+#shortcutsPanel h4 {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--primary-dark);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin: 0 0 0.5rem;
+    opacity: 0.7;
+}
+
+#shortcutsPanel ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 0.7rem;
+    justify-content: center;
+}
+
+#shortcutsPanel li {
+    font-size: 0.72rem;
+    color: var(--primary-dark);
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+#shortcutsPanel kbd {
+    font-family: inherit;
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: var(--primary);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0.3rem;
+    padding: 0.1rem 0.4rem;
+}
+
+/* ── Visual Indicators ── */
+.visual-indicators {
+    display: flex;
+    justify-content: center;
+    gap: 2rem;
+    margin: 1.2rem auto;
+}
+
+.visual-indicator {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.time-sig-visual {
+    position: relative;
+    width: 32px;
+    height: 44px;
+    margin-bottom: 0.3rem;
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 0.4rem;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.time-sig-visual .numerator,
+.time-sig-visual .denominator {
+    position: absolute;
+    width: 100%;
+    text-align: center;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--primary);
+}
+
+.time-sig-visual .numerator {
+    top: 1px;
+}
+
+.time-sig-visual .denominator {
+    bottom: 1px;
+}
+
+.time-sig-visual .divider {
+    position: absolute;
+    width: 70%;
+    left: 15%;
+    height: 1.5px;
+    background: var(--accent);
+    top: 50%;
+    transform: translateY(-50%);
+    border-radius: 1px;
+}
+
+.subdiv-visual {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 44px;
+}
+
+.note-icon {
+    height: 38px;
+    width: auto;
+    filter: drop-shadow(0 0 3px rgba(255, 152, 0, 0.4));
+    opacity: 0.9;
+}
+
+/* ── Responsive ── */
+@media (max-width: 480px) {
+    body {
+        padding: 0.75rem 0.75rem 1.5rem;
+    }
+
+    h1 {
+        font-size: 1.35rem;
+    }
+
+    .beat-indicators {
+        gap: 0.6rem;
+    }
+
+    .dot {
+        width: 2.2rem;
+        height: 2.2rem;
+    }
+
+    #bpmDisplay {
+        font-size: 3rem;
+    }
+
+    .card {
+        padding: 1.25rem 1rem;
+        border-radius: 1rem;
+    }
+
+    .visual-indicators {
+        gap: 1rem;
+    }
+
+    input[type="range"] {
+        max-width: 220px;
+    }
+}
+
+@media (max-width: 360px) {
+    .dot {
+        width: 1.8rem;
+        height: 1.8rem;
+    }
+
+    .beat-indicators {
+        gap: 0.4rem;
+    }
+}
+
+/* QR code for joining from another device, at the bottom of host controls */
+#qrJoin {
+    margin-top: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+#qrCode {
+    background: #fff;
+    padding: 0.8rem;
+    border-radius: 0.9rem;
+    line-height: 0;
+    box-shadow: var(--shadow);
+}
+
+#qrCode img,
+#qrCode canvas {
+    display: block;
+}
+
+.qr-label {
+    font-size: 0.82rem;
+    color: var(--primary-dark);
+    margin: 0;
+}
+
+.qr-url {
+    font-size: 0.72rem;
+    color: var(--accent);
+    opacity: 0.85;
+    margin: 0;
+    word-break: break-all;
+    text-align: center;
+}
+
+/* ── Lobby room list ── */
+#roomListSection {
+    margin-top: 1.5rem;
+    text-align: left;
+    max-width: 280px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+#roomListSection h3 {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--primary-dark);
+    margin: 0 0 0.5rem;
+    text-align: center;
+}
+
+#roomList {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.room-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.7rem 1rem;
+    background: var(--bg-card);
+    border: 1px solid var(--bg-card-border);
+    border-radius: 0.8rem;
+    cursor: pointer;
+    transition: border-color var(--transition), transform var(--transition);
+}
+
+.room-row:hover,
+.room-row:focus-visible {
+    border-color: var(--accent);
+    transform: scale(1.02);
+    outline: none;
+}
+
+.room-row-label {
+    font-weight: 600;
+}
+
+.room-row-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.82rem;
+    color: var(--primary-dark);
+}
+
+.room-status-dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.25);
+    display: inline-block;
+}
+
+.room-status-dot.playing {
+    background: var(--accent);
+    box-shadow: 0 0 6px var(--accent);
+}
+
+#roomListEmpty {
+    text-align: center;
+    font-size: 0.85rem;
+    color: var(--primary-dark);
+    margin-top: 0.5rem;
+}
+
+/* ── Room-not-found fallback panel ── */
+#roomNotFound {
+    padding: 1rem 0;
+}
+
+#roomNotFound p {
+    color: var(--primary-dark);
+    margin-bottom: 1rem;
+}
+
+/* ── Host room info (room number heading; QR code moved to the bottom of
+   host controls — see #qrJoin) ── */
+#roomInfo {
+    margin-bottom: 1.5rem;
+}
+
+#roomIdDisplay {
+    font-size: 1.4rem;
+    font-weight: 800;
+    margin: 0 0 0.5rem;
+}
