@@ -30,10 +30,35 @@ persist across launches. No HTTP listener or Socket.IO dependency is used.
 
 ## Run on Windows
 
-Double-click the portable EXE in `dist/`. For a portable ZIP, extract and
-run its EXE. For the folder ZIP produced by electron-builder, extract the
-whole folder and keep its support files together. Windows may prompt
-because these builds are unsigned. Presets are saved in your user profile.
+**Recommended:** run the `-Setup.exe` once. It installs for the current user
+without administrator rights and creates Start menu and desktop shortcuts.
+Open **Synced Metronome** from the Start menu and pin that shortcut to the
+taskbar. Unpin any shortcut created from the old portable build first.
+Later launches use the installed files immediately, without extracting the
+entire runtime again. Existing saved presets use the same app data profile.
+
+The portable EXE still works without installation, but extracts its runtime
+on every launch and is slower. For the portable ZIP, extract and run its EXE.
+New portable builds use a separate temporary folder per launch and direct
+taskbar pins to the original launcher. Keep that launcher at a stable path.
+The full folder ZIP is another option: extract once, keep all support files
+together, and run `Synced Metronome.exe` in that folder.
+
+Windows may prompt because these builds are unsigned. Presets are saved in
+your user profile and are preserved on uninstall.
+
+## Troubleshooting
+
+Errors are recorded locally in `diagnostics.log` in the app's user-data
+folder (`%APPDATA%/metronome-desktop` in the Windows build). The
+renderer recovery dialog shows the exact log path and offers to reopen the
+window; saved presets are retained and playback restarts only when you press
+Start. Crash dumps stay on your computer and are never uploaded. If an
+error happens again, include the message and the diagnostic log when reporting
+it. A crash without its error details cannot be conclusively diagnosed.
+
+Playback now cancels pending starts and scheduled audio on Stop, disconnects
+finished audio nodes, and keeps at most one pending visual update while hidden.
 
 Builds include a custom metronome icon in the app and portable launcher.
 `assets/icon.png` is the generated master; `assets/icon.ico` contains the
@@ -41,6 +66,8 @@ Windows sizes. `npm run icon` regenerates the ICO. The original artwork
 prompt and generation method are recorded in `assets/icon-prompt.txt`.
 The pure JavaScript packaging hook embeds icons without requiring Wine.
 
-The `-portable.zip` contains just the portable EXE and fits Drive's 100 MiB
-connector upload limit for the current x64 build. Extract and double-click.
+The `-Setup.zip` contains the recommended installer and fits Drive's 100 MiB
+connector upload limit for the current x64 build. Extract and run Setup once.
+The optional `-portable.zip` contains the slower portable launcher and may
+exceed the connector's upload limit.
 Build outputs and dependencies are excluded from Git.

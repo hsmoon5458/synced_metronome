@@ -15,7 +15,8 @@ const { version } = require('../package.json');
   const expected = icon.icons.map(item => digest(item.data)).sort();
   const runtime = path.join(root, 'dist', 'win-unpacked', 'Synced Metronome.exe');
   const launcher = path.join(root, 'dist', `Synced-Metronome-${version}-Windows-x64.exe`);
-  for (const file of [runtime, launcher]) {
+  const installer = path.join(root, 'dist', `Synced-Metronome-${version}-Windows-x64-Setup.exe`);
+  for (const file of [runtime, launcher, installer]) {
     console.log(`Checking ${path.basename(file)} icon resources...`);
     const exe = PE.NtExecutable.from(fs.readFileSync(file));
     const resources = PE.NtExecutableResource.from(exe);
@@ -29,8 +30,13 @@ const { version } = require('../package.json');
   const { extractFile } = await import('@electron/asar');
   assert.deepEqual(extractFile(path.join(root, 'dist', 'win-unpacked', 'resources', 'app.asar'),
     'assets/icon.ico'), icoBytes);
-  const zip = path.join(root, 'dist', `Synced-Metronome-${version}-Windows-x64-portable.zip`);
-  assert.ok(fs.statSync(launcher).size < 104857600, 'EXE exceeds Drive connector upload limit.');
-  assert.ok(fs.statSync(zip).size < 104857600, 'Portable ZIP exceeds Drive connector upload limit.');
-  console.log('Verified custom icons in app and portable launcher, packaged ICO, and Drive upload sizes.');
+  const zip = path.join(root, 'dist', `Synced-Metronome-${version}-Windows-x64-Setup.zip`);
+  assert.ok(fs.statSync(zip).size < 104857600, 'Setup ZIP exceeds Drive connector upload limit.');
+  assert.ok(fs.statSync(installer).size < 104857600, 'Installer exceeds Drive connector upload limit.');
+  const manifest = require('../package.json');
+  // In the pinned builder 26.0.12 implementation, true is what leaves
+  // UNPACK_DIR_NAME unset and uses NSIS's per-launch $PLUGINSDIR.
+  assert.equal(manifest.build.portable.unpackDirName, true);
+  assert.equal(manifest.build.nsis.deleteAppDataOnUninstall, false);
+  console.log('Verified icons in app, installer and portable launcher, packaging configuration, and Drive upload sizes.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

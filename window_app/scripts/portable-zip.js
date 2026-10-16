@@ -9,6 +9,8 @@ const architecture = process.argv[2] || 'x64';
 if (!['x64', 'arm64'].includes(architecture)) throw new Error('Unsupported architecture.');
 const output = path.join(__dirname, '..', 'dist');
 const name = `Synced-Metronome-${version}-Windows-${architecture}`;
-const zip = path.join(output, `${name}-portable.zip`);
-if (fs.existsSync(zip)) fs.unlinkSync(zip);
-execFileSync(path7za, ['a', '-tzip', '-mx=0', zip, `${name}.exe`], { cwd: output, stdio: 'inherit' });
+for (const [suffix, executable] of [['portable', `${name}.exe`], ['Setup', `${name}-Setup.exe`]]) {
+  const zip = path.join(output, `${name}-${suffix}.zip`);
+  if (fs.existsSync(zip)) fs.unlinkSync(zip);
+  execFileSync(path7za, ['a', '-tzip', '-mx=0', zip, executable], { cwd: output, stdio: 'inherit' });
+}

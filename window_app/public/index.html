@@ -14,7 +14,7 @@
   <h1>Synced Metronome</h1>
   <div class="version-display" id="versionDisplay">v...</div>
   <div class="version-meta">
-    <p>Last Modified: 2026-10-08</p>
+    <p>Last Modified: 2026-10-16</p>
     <p>Developer: Hye Sung Moon</p>
   </div>
   <div class="connection-status" id="connectionStatus">
@@ -156,6 +156,10 @@
   let isSyncing = false;
   let lastDriftCheck = 0;
   let reSyncInterval = null;
+  let playbackGeneration = 0;
+  let visualFrame = null;
+  let pendingVisual = null;
+  const scheduledSounds = new Set();
 
   // DOM Elements
   const metronomeControls = document.getElementById('metronomeControls');
@@ -169,7 +173,7 @@
   const noSleep = new NoSleep();
 
   // Fetch and display version from server
-  document.getElementById('versionDisplay').textContent = 'v1.17.1';
+  document.getElementById('versionDisplay').textContent = 'v1.17.2';
 
   // Renders a QR code + link pointing at a specific room's join URL. Called
   // once a host actually has a room number (there's nothing to share before
@@ -304,6 +308,7 @@
   function stopSilentAudio() {
     if (silentSource) {
       try { silentSource.stop(); } catch (e) { /* ignore */ }
+      silentSource.disconnect();
       silentSource = null;
     }
   }
@@ -611,6 +616,35 @@
   }
   buildClickBuffers();
 
+  function clearScheduledPlayback() {
+    // Invalidate outstanding resume() promises as well as already-set timers.
+    playbackGeneration++;
+    if (tickTimer !== null) clearTimeout(tickTimer);
+    if (syncTimeout !== null) clearTimeout(syncTimeout);
+    if (visualFrame !== null) cancelAnimationFrame(visualFrame);
+    tickTimer = syncTimeout = visualFrame = null;
+    pendingVisual = null;
+    for (const voice of scheduledSounds) {
+      try { voice.noise.stop(); } catch (_) { /* already ended */ }
+      try { voice.osc.stop(); } catch (_) { /* already ended */ }
+      voice.dispose();
+    }
+  }
+
+  function queueBeatVisual(beat, accent) {
+    pendingVisual = { beat, accent };
+    // Minimized windows may stop drawing frames. Keep only the newest visual,
+    // rather than accumulating a callback for every beat while hidden.
+    if (visualFrame !== null) return;
+    visualFrame = requestAnimationFrame(() => {
+      visualFrame = null;
+      if (!isRunning || !pendingVisual) return;
+      highlightDot(pendingVisual.beat);
+      flashScreen(pendingVisual.accent);
+      pendingVisual = null;
+    });
+  }
+
   function scheduleClick(time, isAccent = false) {
     const noiseLength = isAccent ? 0.08 : 0.05;
     const buffer = isAccent ? clickBuffers.accent : clickBuffers.normal;
@@ -620,7 +654,6 @@
     gain.gain.setValueAtTime(isAccent ? 2.0 : 1.0, time);
     gain.gain.linearRampToValueAtTime(0.001, time + noiseLength);
     noise.connect(gain).connect(audioCtx.destination);
-    noise.start(time);
     const osc = audioCtx.createOscillator();
     const oscGain = audioCtx.createGain();
     osc.type = isAccent ? 'square' : 'triangle';
@@ -628,6 +661,16 @@
     oscGain.gain.setValueAtTime(isAccent ? 10.0 : 5.0, time);
     oscGain.gain.linearRampToValueAtTime(0.001, time + (isAccent ? 0.09 : 0.05));
     osc.connect(oscGain).connect(audioCtx.destination);
+    const voice = { noise, osc, dispose() {
+      noise.disconnect();
+      gain.disconnect();
+      osc.disconnect();
+      oscGain.disconnect();
+      scheduledSounds.delete(voice);
+    } };
+    scheduledSounds.add(voice);
+    osc.onended = voice.dispose;
+    noise.start(time);
     osc.start(time);
     osc.stop(time + (isAccent ? 0.09 : 0.05));
   }
@@ -695,10 +738,7 @@
         scheduleClick(nextTick, isFirstBeat);
         if (isMainBeat) {
           const visualBeat = currentBeat % numerator;
-          requestAnimationFrame(() => {
-            highlightDot(visualBeat);
-            flashScreen(isFirstBeat);
-          });
+          queueBeatVisual(visualBeat, isFirstBeat);
         }
         nextTick += interval;
         beatCount++;
@@ -734,14 +774,7 @@
       stopButton.disabled = !isRunning;
     }
     if (!isRunning && wasRunning) {
-      if (tickTimer) {
-        clearTimeout(tickTimer);
-        tickTimer = null;
-      }
-      if (syncTimeout) {
-        clearTimeout(syncTimeout);
-        syncTimeout = null;
-      }
+      clearScheduledPlayback();
       document.querySelectorAll('.dot').forEach(dot => dot.classList.remove('active'));
       releaseScreenWake();
       return;
@@ -759,12 +792,11 @@
   }
 
   function startMetronomeSync() {
-    if (syncTimeout) {
-      clearTimeout(syncTimeout);
-      syncTimeout = null;
-    }
+    clearScheduledPlayback();
+    const generation = playbackGeneration;
     try {
       audioCtx.resume().then(() => {
+        if (!isRunning || generation !== playbackGeneration) return;
         const now = globalNow();
         const intervalMs = (60000 / bpm) / subdivision;
         const elapsedMs = now - startTime;
@@ -791,6 +823,7 @@
 
         syncTimeout = setTimeout(() => {
           syncTimeout = null;
+          if (!isRunning || generation !== playbackGeneration) return;
           // Don't reset nextTick here! It's already set precisely above.
           // Just update the beat count
           beatCount = ticksSinceStart + 1;
@@ -999,14 +1032,7 @@
     if (role !== 'host') return;
     isRunning = false;
     stopButton.disabled = true;
-    if (tickTimer) {
-      clearTimeout(tickTimer);
-      tickTimer = null;
-    }
-    if (syncTimeout) {
-      clearTimeout(syncTimeout);
-      syncTimeout = null;
-    }
+    clearScheduledPlayback();
     document.querySelectorAll('.dot').forEach(dot => dot.classList.remove('active'));
     releaseScreenWake();
     socket.emit('stopMetronome');
