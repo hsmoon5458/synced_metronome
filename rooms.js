@@ -88,6 +88,7 @@ function buildSyncPayload(room, overrides = {}) {
   return {
     bpm: s.bpm,
     startTime: s.startTime,
+    tempoChange: s.tempoChange || null,
     isRunning: s.isRunning,
     timeSignature: s.timeSignature,
     subdivision: s.subdivision,

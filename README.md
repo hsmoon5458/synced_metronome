@@ -17,6 +17,7 @@ public/index.html       Entire web client: markup + inline <script>, one file.
 public/style.css        Web client styles.
 public/icons/*.svg      Subdivision note icons (quarter/eighth/triplet/sixteenth).
 test/rooms.test.js      Plain-assert tests for rooms.js (no framework).
+test/playback.test.js   Deterministic Web Audio scheduler regression checks.
 ```
 
 `rooms.js` has zero dependencies (no express/socket.io imports) specifically
@@ -83,7 +84,7 @@ server-clock correction to its own local scheduling; followers do.
 | `joinRoom` | c→s | `{ roomId }` | Ack `{ ok: true }` or `{ ok: false, error: 'not_found' }`. |
 | `identify` | c→s | `{ role, roomId }` | No ack. Reclaims a room/host seat after an in-page reconnect (not used for page reloads — see the refresh note above). |
 | `setAccentEnabled` | c→s | `{ enabled }` | Host-only, silently ignored otherwise. |
-| `updateSettings` | c→s | `{ bpm, timeSignature, subdivision, startTime? }` | Host-only. |
+| `updateSettings` | c→s | `{ bpm, timeSignature, subdivision, startTime?, tempoChange? }` | Host-only. |
 | `startMetronome` / `stopMetronome` | c→s | — | Host-only. |
 | `timeSync` | c→s | `{ t0 }`, ack `{ t0, t1, t2 }` | — |
 | `sync` | s→c | full metronome state | Broadcast to `room:${roomId}` on any change. |
@@ -121,3 +122,14 @@ Node version itself; just fall back to static checks + `npm test` and say so.
   should be reflected (new host view, save/delete/reorder); it shipped once
   without a call in `setRole()`, so the list stayed empty until the user
   incidentally triggered some other UI update.
+
+## Live tempo changes
+
+Playback settings have a separate audible grid from the UI values. While
+running, the host publishes a `tempoChange` with a future main-beat time,
+absolute beat number, and previous grid. Clients keep scheduling the previous
+tempo up to that boundary and switch together without restarting the timer or
+replaying queued clicks. Slider input reuses an upcoming boundary so a drag
+cannot keep postponing the change. Subdivision changes preserve the main-beat
+position and accent order. The previous grid is included in room state so a
+follower joining during the transition can schedule both sides correctly.
