@@ -23,7 +23,10 @@
             state.bpm = Math.max(30, Math.min(300, Number(data.bpm) || state.bpm));
             if (['4/4', '3/4', '6/8'].includes(data.timeSignature)) state.timeSignature = data.timeSignature;
             state.subdivision = Math.max(1, Math.min(4, Math.round(Number(data.subdivision) || state.subdivision)));
-            if (Number.isFinite(data.startTime)) state.startTime = data.startTime;
+            if (Number.isFinite(data.startTime)) {
+              state.startTime = data.startTime;
+              state.tempoChange = data.tempoChange || null;
+            }
             break;
           case 'setAccentEnabled':
             state.accentEnabled = !!data.enabled;
@@ -31,6 +34,7 @@
           case 'startMetronome':
             if (state.isRunning) return;
             // Brief lead-in gives Web Audio time to schedule the first beat.
+            state.tempoChange = null;
             state.startTime = now() + 100;
             state.isRunning = true;
             break;

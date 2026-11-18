@@ -39,6 +39,22 @@ app.whenReady().then(async () => {
   await run('changeBpm(10); document.getElementById("startButton").click();');
   await pause(800);
   assert.equal(await run('isRunning && beatCount > 0 && audioCtx.state === "running"'), true);
+  // Tempo changes keep the live scheduler and its queued clicks. Capture
+  // scheduled timestamps in the real renderer while dragging the BPM slider.
+  await run(`
+    window.scheduledTicks = [];
+    window.originalScheduleClick = scheduleClick;
+    scheduleClick = (time, accent) => { scheduledTicks.push(time); originalScheduleClick(time, accent); };
+    window.generationBeforeTempo = playbackGeneration;
+    changeBpm(40);
+    void 0;
+  `);
+  for (let i = 0; i < 25; i++) { await run('changeBpm(-1)'); await pause(25); }
+  await pause(1200);
+  assert.equal(await run('playbackGeneration === generationBeforeTempo && activePlayback.bpm === 145 && pendingPlayback === null'), true);
+  assert.equal(await run('scheduledTicks.length > 4 && scheduledSounds.size < 12'), true);
+  await run('scheduleClick = originalScheduleClick; bpm = 130; updateSettings();');
+  await pause(1200);
   // A burst of control changes must leave just one active scheduler and a
   // bounded number of scheduled voices, including while the window is hidden.
   await run('for (let i = 0; i < 20; i++) { stopMetronome(); startMetronome(); }');

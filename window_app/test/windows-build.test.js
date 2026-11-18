@@ -30,6 +30,12 @@ const { version } = require('../package.json');
   const { extractFile } = await import('@electron/asar');
   assert.deepEqual(extractFile(path.join(root, 'dist', 'win-unpacked', 'resources', 'app.asar'),
     'assets/icon.ico'), icoBytes);
+  const archive = path.join(root, 'dist', 'win-unpacked', 'resources', 'app.asar');
+  for (const relative of ['public/index.html', 'public/local-socket.js', 'desktop/main.js']) {
+    assert.deepEqual(extractFile(archive, relative), fs.readFileSync(path.join(root, relative)),
+      `Packaged source is stale: ${relative}`);
+  }
+  assert.equal(JSON.parse(extractFile(archive, 'package.json')).version, version);
   const zip = path.join(root, 'dist', `Synced-Metronome-${version}-Windows-x64-Setup.zip`);
   assert.ok(fs.statSync(zip).size < 104857600, 'Setup ZIP exceeds Drive connector upload limit.');
   assert.ok(fs.statSync(installer).size < 104857600, 'Installer exceeds Drive connector upload limit.');

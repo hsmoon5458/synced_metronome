@@ -71,3 +71,17 @@ connector upload limit for the current x64 build. Extract and run Setup once.
 The optional `-portable.zip` contains the slower portable launcher and may
 exceed the connector's upload limit.
 Build outputs and dependencies are excluded from Git.
+
+## Updating an existing installation
+
+Extract the new `-Setup.zip` and run its `-Setup.exe` as the same Windows user
+who installed the previous version. No manual uninstall is needed: the NSIS
+installer detects the existing installation, replaces its application files,
+and retains its installation location, shortcuts, and saved presets. Close
+the metronome before updating (the installer prompts if it is still open).
+Version 1.17.3 retains the 1.17.2 app ID, installer identity, per-user install
+mode, application name, and private origin used to store presets.
+
+Live tempo changes now take effect on an upcoming main beat without stopping
+the audio scheduler. Rapid slider changes reuse that beat, and changes to
+subdivisions preserve the current musical beat and accent position.

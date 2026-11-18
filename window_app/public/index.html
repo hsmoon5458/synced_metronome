@@ -14,7 +14,7 @@
   <h1>Synced Metronome</h1>
   <div class="version-display" id="versionDisplay">v...</div>
   <div class="version-meta">
-    <p>Last Modified: 2026-10-16</p>
+    <p>Last Modified: 2026-11-18</p>
     <p>Developer: Hye Sung Moon</p>
   </div>
   <div class="connection-status" id="connectionStatus">
@@ -173,7 +173,7 @@
   const noSleep = new NoSleep();
 
   // Fetch and display version from server
-  document.getElementById('versionDisplay').textContent = 'v1.17.2';
+  document.getElementById('versionDisplay').textContent = 'v1.17.3';
 
   // Renders a QR code + link pointing at a specific room's join URL. Called
   // once a host actually has a room number (there's nothing to share before
@@ -661,7 +661,7 @@
     oscGain.gain.setValueAtTime(isAccent ? 10.0 : 5.0, time);
     oscGain.gain.linearRampToValueAtTime(0.001, time + (isAccent ? 0.09 : 0.05));
     osc.connect(oscGain).connect(audioCtx.destination);
-    const voice = { noise, osc, dispose() {
+    const voice = { time, noise, osc, dispose() {
       noise.disconnect();
       gain.disconnect();
       osc.disconnect();
@@ -675,13 +675,67 @@
     osc.stop(time + (isAccent ? 0.09 : 0.05));
   }
 
+  // UI settings may change while old clicks are still queued. Keep the
+  // audible grid separate and switch it once, on a shared future main beat.
+  let activePlayback = null;
+  let pendingPlayback = null;
+  let localTempoChange = null;
+  let localReceivedChange = null;
+
+  function hardwareLatency() {
+    return (audioCtx.outputLatency || 0) + (audioCtx.baseLatency || 0);
+  }
+
+  function receiveTempoChange(data) {
+    const change = data.tempoChange;
+    if (!change) return;
+    const atAudio = role === 'host' && localTempoChange && localTempoChange.at === change.at
+      ? localTempoChange.audioTime
+      : audioCtx.currentTime + (change.at - globalNow()) / 1000 - hardwareLatency();
+    // A delayed packet can arrive after old-tempo clicks were queued. Replace
+    // only voices that have not sounded; never cut off a click in progress.
+    if (nextTick >= atAudio - 0.000001) {
+      const cutoff = Math.max(atAudio - 0.000001, audioCtx.currentTime);
+      for (const voice of scheduledSounds) {
+        if (voice.time >= cutoff) {
+          try { voice.noise.stop(); voice.osc.stop(); } catch (_) { /* ended */ }
+          voice.dispose();
+        }
+      }
+      activePlayback = { ...change.previous };
+      nextTick = atAudio;
+      beatCount = change.beat * activePlayback.subdivision;
+    }
+    pendingPlayback = { ...data, atAudio, beat: change.beat };
+  }
+
+  function applyPendingTempo() {
+    if (!pendingPlayback || nextTick < pendingPlayback.atAudio - 0.000001) return;
+    const pending = pendingPlayback;
+    activePlayback = { bpm: pending.bpm, subdivision: pending.subdivision,
+      timeSignature: pending.timeSignature, startTime: pending.startTime };
+    nextTick = pending.atAudio;
+    beatCount = pending.beat * pending.subdivision;
+    startTime = pending.startTime;
+    pendingPlayback = null;
+    // If the change arrived late, skip elapsed ticks rather than replaying them.
+    const interval = 60 / activePlayback.bpm / activePlayback.subdivision;
+    if (nextTick < audioCtx.currentTime) {
+      const skipped = Math.ceil((audioCtx.currentTime - nextTick) / interval);
+      nextTick += skipped * interval;
+      beatCount += skipped;
+    }
+  }
+
   function tickLoop() {
     if (!isRunning) return;
     try {
-      const interval = (60 / bpm) / subdivision;
+      applyPendingTempo();
+      let { bpm: playingBpm, subdivision: playingSubdivision, timeSignature: playingSignature } = activePlayback;
+      let interval = 60 / playingBpm / playingSubdivision;
       const now = audioCtx.currentTime;
-      const [numerator, denominator] = timeSignature.split('/').map(Number);
-      const ticksPerBar = numerator * subdivision;
+      let [numerator, denominator] = playingSignature.split('/').map(Number);
+      let ticksPerBar = numerator * playingSubdivision;
 
       // Local stall guard (host + followers, no server involved at all): if
       // the JS timer chain itself stalled (tab backgrounded, main-thread
@@ -695,8 +749,13 @@
       if (behindBy > 0.3) {
         const missedTicks = Math.floor(behindBy / interval) + 1;
         console.log(`Stall recovery: skipping ${missedTicks} tick(s), fell behind by ${(behindBy * 1000).toFixed(0)}ms`);
-        nextTick += missedTicks * interval;
-        beatCount += missedTicks;
+        const skip = pendingPlayback
+          ? Math.min(missedTicks, Math.max(0, Math.ceil((pendingPlayback.atAudio - nextTick) / interval)))
+          : missedTicks;
+        nextTick += skip * interval;
+        beatCount += skip;
+        applyPendingTempo();
+        ({ bpm: playingBpm, subdivision: playingSubdivision } = activePlayback);
       }
 
       // Re-anchor timing to the server clock every ~2s — followers only.
@@ -709,7 +768,7 @@
       if (role !== 'host' && now - lastDriftCheck > 2.0 && startTime && timeSynced) {
         lastDriftCheck = now;
         const serverNow = globalNow();
-        const intervalMs = (60000 / bpm) / subdivision;
+        const intervalMs = 60000 / playingBpm / playingSubdivision;
         const hardwareLatency = (audioCtx.outputLatency || 0) + (audioCtx.baseLatency || 0);
 
         // Compare nextTick against where the beat it already represents
@@ -718,7 +777,7 @@
         // "late" by about one lookahead-buffer's worth, causing a false
         // re-anchor (and a duplicate, already-scheduled beat) on every
         // check even with perfectly matched clocks.
-        const targetMs = startTime + beatCount * intervalMs;
+        const targetMs = activePlayback.startTime + beatCount * intervalMs;
         const targetAudio = now + (targetMs - serverNow) / 1000 - hardwareLatency;
         const drift = nextTick - targetAudio;
         if (Math.abs(drift) > 0.05) {
@@ -732,9 +791,15 @@
       }
 
       while (nextTick < now + 0.3) {
-        const currentBeat = Math.floor(beatCount / subdivision);
+        applyPendingTempo();
+        ({ bpm: playingBpm, subdivision: playingSubdivision, timeSignature: playingSignature } = activePlayback);
+        interval = 60 / playingBpm / playingSubdivision;
+        [numerator, denominator] = playingSignature.split('/').map(Number);
+        ticksPerBar = numerator * playingSubdivision;
+        if (nextTick >= now + 0.3) break;
+        const currentBeat = Math.floor(beatCount / playingSubdivision);
         const isFirstBeat = (beatCount % ticksPerBar === 0) && accentEnabled;
-        const isMainBeat = (beatCount % subdivision === 0);
+        const isMainBeat = (beatCount % playingSubdivision === 0);
         scheduleClick(nextTick, isFirstBeat);
         if (isMainBeat) {
           const visualBeat = currentBeat % numerator;
@@ -773,68 +838,63 @@
       startButton.disabled = isRunning;
       stopButton.disabled = !isRunning;
     }
-    if (!isRunning && wasRunning) {
+    if (!isRunning) {
       clearScheduledPlayback();
-      document.querySelectorAll('.dot').forEach(dot => dot.classList.remove('active'));
-      releaseScreenWake();
+      activePlayback = pendingPlayback = localTempoChange = localReceivedChange = null;
+      startTime = null;
+      nextTick = beatCount = 0;
+      if (wasRunning) {
+        document.querySelectorAll('.dot').forEach(dot => dot.classList.remove('active'));
+        releaseScreenWake();
+      }
       return;
     }
-    if (isRunning && data.startTime) {
-      if (wasRunning && tickTimer) {
-        clearTimeout(tickTimer);
-        tickTimer = null;
+    if (!data.startTime || !timeSynced) return;
+    if (wasRunning && activePlayback) {
+      // Accent and settings broadcasts keep the existing timer and audio queue.
+      // Duplicate broadcasts must not rewind a transition already in progress.
+      if (data.tempoChange && (!localReceivedChange ||
+          JSON.stringify(data.tempoChange) !== localReceivedChange.key || data.bpm !== localReceivedChange.bpm ||
+          data.subdivision !== localReceivedChange.subdivision || data.timeSignature !== localReceivedChange.timeSignature)) {
+        receiveTempoChange(data);
+      } else if (!data.tempoChange && (activePlayback.startTime !== data.startTime ||
+          activePlayback.bpm !== data.bpm || activePlayback.subdivision !== subdivision ||
+          activePlayback.timeSignature !== timeSignature)) {
+        // A restart on reconnect or a host using an older client has no
+        // transition boundary. Rejoin that authoritative timeline once.
+        activePlayback = { ...data };
+        pendingPlayback = null;
+        startTime = data.startTime;
+        startMetronomeSync();
       }
-      if (!timeSynced) return;
+    } else {
       acquireScreenWake();
-      startTime = data.startTime;
+      const change = data.tempoChange;
+      activePlayback = change && globalNow() < change.at ? { ...change.previous } : { ...data };
+      startTime = activePlayback.startTime;
+      pendingPlayback = null;
+      if (change && globalNow() < change.at) receiveTempoChange(data);
       startMetronomeSync();
     }
+    localReceivedChange = data.tempoChange ? { key: JSON.stringify(data.tempoChange),
+      bpm: data.bpm, subdivision: data.subdivision, timeSignature: data.timeSignature } : null;
   }
 
   function startMetronomeSync() {
     clearScheduledPlayback();
     const generation = playbackGeneration;
-    try {
-      audioCtx.resume().then(() => {
-        if (!isRunning || generation !== playbackGeneration) return;
-        const now = globalNow();
-        const intervalMs = (60000 / bpm) / subdivision;
-        const elapsedMs = now - startTime;
-        const ticksSinceStart = Math.floor(elapsedMs / intervalMs);
-        const nextTickTimeMs = startTime + (ticksSinceStart + 1) * intervalMs;
-        const delayMs = nextTickTimeMs - now;
-
-        // Calculate the precise AudioContext time for the next tick
-        // We map the target Server Time to AudioContext time
-        // Relation: AudioTime = CurrentAudioTime + (TargetServerTime - CurrentServerTime)
-        // Note: dividing by 1000 because audioCtx uses seconds
-        const delaySec = delayMs / 1000;
-
-        // Compensate for Output Latency if available (experimental feature)
-        // audioCtx.outputLatency is the time from processing to sound output
-        // We subtract it to schedule the sound earlier so it *arrives* on time
-        const hardwareLatency = (audioCtx.outputLatency || 0) + (audioCtx.baseLatency || 0);
-
-        // Set nextTick anchor based on the math, not "now"
-        nextTick = audioCtx.currentTime + delaySec - hardwareLatency;
-        lastDriftCheck = audioCtx.currentTime;
-
-        const clampedDelay = Math.max(0, Math.min(1000, delayMs));
-
-        syncTimeout = setTimeout(() => {
-          syncTimeout = null;
-          if (!isRunning || generation !== playbackGeneration) return;
-          // Don't reset nextTick here! It's already set precisely above.
-          // Just update the beat count
-          beatCount = ticksSinceStart + 1;
-          tickLoop();
-        }, clampedDelay);
-      }).catch(err => {
-        console.error('Audio context resume error:', err);
-      });
-    } catch (error) {
-      console.error('Error starting metronome:', error);
-    }
+    audioCtx.resume().then(() => {
+      if (!isRunning || generation !== playbackGeneration || !activePlayback) return;
+      const now = globalNow();
+      const intervalMs = 60000 / activePlayback.bpm / activePlayback.subdivision;
+      // Start at beat zero during the lead-in; a long interval must not
+      // manufacture negative beat indices before the initial start.
+      beatCount = Math.max(0, Math.ceil((now - activePlayback.startTime) / intervalMs));
+      nextTick = audioCtx.currentTime +
+        (activePlayback.startTime + beatCount * intervalMs - now) / 1000 - hardwareLatency();
+      lastDriftCheck = audioCtx.currentTime;
+      tickLoop();
+    }).catch(err => console.error('Audio context resume error:', err));
   }
 
   socket.on('sync', syncClock);
@@ -1001,11 +1061,29 @@
       subdivision: subdiv
     };
 
-    if (isRunning) {
-      const delayMs = (nextTick - audioCtx.currentTime) * 1000;
-      const nextBeatTime = globalNow() + delayMs;
-      const newInterval = (60000 / bpm) / subdiv;
-      payload.startTime = nextBeatTime - (beatCount * newInterval);
+    if (isRunning && activePlayback) {
+      // Reuse a pending boundary during slider drags so repeated input cannot
+      // postpone the tempo change indefinitely. Leave 650ms for room delivery.
+      const reusable = localTempoChange && localTempoChange.audioTime > audioCtx.currentTime
+        ? localTempoChange : null;
+      const previous = reusable ? reusable.previous : activePlayback;
+      const interval = 60 / previous.bpm / previous.subdivision;
+      const firstTick = nextTick || audioCtx.currentTime +
+        (previous.startTime - globalNow()) / 1000 - hardwareLatency();
+      const firstCount = nextTick ? beatCount : 0;
+      const ticksAhead = Math.max(0, Math.ceil((audioCtx.currentTime + 0.65 - firstTick) / interval));
+      const boundaryTick = Math.ceil((firstCount + ticksAhead) / previous.subdivision) * previous.subdivision;
+      const audioTime = reusable ? reusable.audioTime
+        : firstTick + (boundaryTick - firstCount) * interval;
+      const beat = reusable ? reusable.beat : boundaryTick / previous.subdivision;
+      const at = reusable ? reusable.at
+        : globalNow() + (audioTime - audioCtx.currentTime + hardwareLatency()) * 1000;
+      payload.startTime = at - beat * 60000 / bpm;
+      payload.tempoChange = { at, beat, previous: {
+        bpm: previous.bpm, subdivision: previous.subdivision,
+        timeSignature: previous.timeSignature, startTime: previous.startTime
+      } };
+      localTempoChange = { at, audioTime, beat, previous: payload.tempoChange.previous };
     }
 
     socket.emit('updateSettings', payload);

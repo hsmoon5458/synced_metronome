@@ -1,11 +1,11 @@
 {
   "name": "metronome-desktop",
-  "version": "1.17.2",
+  "version": "1.17.3",
   "description": "An independent offline desktop metronome for Windows",
   "main": "desktop/main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node test/desktop.test.js",
+    "test": "node test/desktop.test.js && node test/playback.test.js",
     "test:desktop": "electron test/desktop-smoke.js",
     "test:windows-build": "node test/windows-build.test.js",
     "icon": "node scripts/create-icon.js",
@@ -18,7 +18,9 @@
   "build": {
     "appId": "com.hyesungmoon.metronome",
     "productName": "Synced Metronome",
-    "electronLanguages": ["en-US"],
+    "electronLanguages": [
+      "en-US"
+    ],
     "afterPack": "scripts/embed-icon.js",
     "directories": {
       "output": "dist"
@@ -50,7 +52,9 @@
       "createStartMenuShortcut": true,
       "deleteAppDataOnUninstall": false
     },
-    "portable": { "unpackDirName": true }
+    "portable": {
+      "unpackDirName": true
+    }
   },
   "devDependencies": {
     "7zip-bin": "5.2.0",

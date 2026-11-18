@@ -37,3 +37,19 @@ for (const match of html.matchAll(/(?:src|href)="\/([^"#]+)"/g)) {
   assert.ok(fs.existsSync(path.join(output, match[1])), `Missing offline asset: ${match[1]}`);
 }
 console.log('Desktop offline adapter and bundled asset checks passed.');
+
+// These values identify the installed 1.17.2 app. Changing them creates a
+// second installation/profile instead of upgrading the existing app.
+const manifest = require('../package.json');
+assert.equal(manifest.name, 'metronome-desktop');
+assert.equal(manifest.build.appId, 'com.hyesungmoon.metronome');
+assert.equal(manifest.build.productName, 'Synced Metronome');
+assert.equal(manifest.build.nsis.guid, undefined); // keep builder's appId-derived GUID
+assert.equal(manifest.build.nsis.oneClick, true);
+assert.equal(manifest.build.nsis.perMachine, false);
+assert.equal(manifest.build.nsis.deleteAppDataOnUninstall, false);
+assert.ok(manifest.version.split('.').map(Number).some((part, i) => part > [1,17,2][i]));
+const main = fs.readFileSync(path.join(output, '../desktop/main.js'), 'utf8');
+assert.match(main, /scheme: 'metronome'/);
+assert.match(main, /loadURL\('metronome:\/\/app\/'\)/);
+console.log('Existing Windows installation identity and preset profile are preserved.');
