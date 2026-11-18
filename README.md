@@ -115,6 +115,9 @@ Node version itself; just fall back to static checks + `npm test` and say so.
   directly, refresh to test.
 - Keep `rooms.js` free of `express`/`socket.io` imports — that's what makes
   it independently testable.
+- Web and Windows releases share the same version: keep the root and
+  `window_app/package.json` versions aligned, including their lockfiles and
+  the desktop version display.
 - Bump `package.json` `version` and the `Last Modified` date in
   `public/index.html`'s `.version-meta` block on user-visible changes.
 - Preset list (`renderPresets()`) doesn't auto-render on its own — it only
