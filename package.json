@@ -1,10 +1,10 @@
 {
   "name": "click_sync",
-  "version": "1.16.3",
+  "version": "1.16.4",
   "description": "",
   "main": "server.js",
   "scripts": {
-    "test": "node test/rooms.test.js",
+    "test": "node test/rooms.test.js && node test/playback.test.js",
     "start": "node server.js"
   },
   "keywords": [],

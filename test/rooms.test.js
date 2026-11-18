@@ -75,6 +75,19 @@ test('buildSyncPayload reflects room state and applies overrides', () => {
   assert.strictEqual(overridden.bpm, 140);
 });
 
+test('sync includes the previous tempo grid for a follower joining mid-transition', () => {
+  const rm = new RoomManager();
+  const room = rm.getRoom(rm.createRoom());
+  const transition = { at: 10000, beat: 4, previous: {
+    bpm: 120, subdivision: 2, timeSignature: '4/4', startTime: 8000
+  } };
+  room.metronomeState.tempoChange = transition;
+  room.metronomeState.bpm = 180;
+  const payload = buildSyncPayload(room);
+  assert.deepStrictEqual(payload.tempoChange, transition);
+  assert.strictEqual(payload.bpm, 180);
+});
+
 test('newly created room starts with default metronome state', () => {
   const rm = new RoomManager();
   const a = rm.createRoom();

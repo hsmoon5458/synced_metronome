@@ -138,6 +138,7 @@ function registerSocketHandlers(io, roomManager) {
         // If a new startTime is provided (e.g. for re-syncing on BPM change), update it
         if (settings.startTime) {
           room.metronomeState.startTime = settings.startTime;
+          room.metronomeState.tempoChange = settings.tempoChange || null;
         }
 
         console.log(`Settings updated by host of room ${roomId}:`, {
@@ -159,6 +160,7 @@ function registerSocketHandlers(io, roomManager) {
       const room = roomId != null ? roomManager.getRoom(roomId) : null;
       if (room && socket.id === room.hostSocketId) {
         // Start metronome with a 1-second future start time for synchronization
+        room.metronomeState.tempoChange = null;
         room.metronomeState.startTime = Date.now() + 1000;
         room.metronomeState.isRunning = true;
 
